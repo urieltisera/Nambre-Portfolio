@@ -2,7 +2,7 @@
 
 import {BarChart3, FileUp, QrCode, RotateCcw} from "lucide-react";
 import {useCallback, useEffect, useMemo, useState} from "react";
-import {assetUrl, Business, DailyScan, MenuState, QRCode as QR, request, Summary} from "@/lib/api";
+import {Business, DailyScan, downloadQrAsset, MenuState, QRCode as QR, request, Summary} from "@/lib/api";
 
 type View = "dashboard" | "menu" | "qr" | "analytics";
 
@@ -15,6 +15,13 @@ export function BusinessPanel({token}: {token: string}) {
   const [qr, setQr] = useState<QR[]>([]);
   const [view, setView] = useState<View>("dashboard");
   const [error, setError] = useState("");
+  const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
+  const [selectedLogo, setSelectedLogo] = useState<File | null>(null);
+  const [uploadingMenu, setUploadingMenu] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [menuMessage, setMenuMessage] = useState("");
+  const [logoMessage, setLogoMessage] = useState("");
+  const [qrDownloadError, setQrDownloadError] = useState("");
 
   const businessId = business?.id;
 
@@ -46,25 +53,45 @@ export function BusinessPanel({token}: {token: string}) {
     void refresh();
   }, [businessId, refresh]);
 
-  async function upload(file: File | null) {
-    if (!file || !businessId) return;
+  async function upload() {
+    if (!selectedPdf || !businessId) return;
+    setUploadingMenu(true);
+    setMenuMessage("");
     const body = new FormData();
-    body.append("file", file);
-    await request<MenuState>(`/api/businesses/${businessId}/menu/replace`, token, {
-      method: "POST",
-      body,
-    });
-    await refresh();
+    body.append("file", selectedPdf);
+    try {
+      await request<MenuState>(`/api/businesses/${businessId}/menu/replace`, token, {
+        method: "POST",
+        body,
+      });
+      setSelectedPdf(null);
+      setMenuMessage("Carta guardada correctamente.");
+      await refresh();
+    } catch {
+      setMenuMessage("No se pudo guardar la carta.");
+    } finally {
+      setUploadingMenu(false);
+    }
   }
 
-  async function uploadLogo(file: File | null) {
-    if (!file || !businessId) return;
+  async function uploadLogo() {
+    if (!selectedLogo || !businessId) return;
+    setUploadingLogo(true);
+    setLogoMessage("");
     const body = new FormData();
-    body.append("file", file);
-    setBusiness(await request<Business>(`/api/businesses/${businessId}/logo`, token, {
-      method: "POST",
-      body,
-    }));
+    body.append("file", selectedLogo);
+    try {
+      setBusiness(await request<Business>(`/api/businesses/${businessId}/logo`, token, {
+        method: "POST",
+        body,
+      }));
+      setSelectedLogo(null);
+      setLogoMessage("Logo guardado correctamente.");
+    } catch {
+      setLogoMessage("No se pudo guardar el logo.");
+    } finally {
+      setUploadingLogo(false);
+    }
   }
 
   async function rollback(id: string) {
@@ -80,6 +107,15 @@ export function BusinessPanel({token}: {token: string}) {
   async function generateQr() {
     if (!businessId) return;
     setQr(await request<QR[]>(`/api/businesses/${businessId}/qr/generate`, token, {method: "POST"}));
+  }
+
+  async function downloadQr(item: QR) {
+    setQrDownloadError("");
+    try {
+      await downloadQrAsset(item.asset_url, token);
+    } catch {
+      setQrDownloadError("No se pudo descargar el QR. Volvé a iniciar sesión e intentá nuevamente.");
+    }
   }
 
   const lastUpdate = useMemo(() => {
@@ -131,9 +167,19 @@ export function BusinessPanel({token}: {token: string}) {
             <h2>Mi carta</h2>
             <p>{menu?.current?.original_filename ?? "No hay PDF publicado"}</p>
             <label className="muted">Logo</label>
-            <input type="file" accept="image/png,image/jpeg" onChange={(event) => uploadLogo(event.target.files?.[0] ?? null)} />
+            <input type="file" accept="image/png,image/jpeg" onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)} />
+            <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
+            <button disabled={!selectedLogo || uploadingLogo} onClick={uploadLogo}>
+              {uploadingLogo ? "Subiendo..." : "Guardar logo"}
+            </button>
+            {logoMessage ? <p className={logoMessage.startsWith("No") ? "error" : "muted"}>{logoMessage}</p> : null}
             <label className="muted">PDF</label>
-            <input type="file" accept="application/pdf" onChange={(event) => upload(event.target.files?.[0] ?? null)} />
+            <input type="file" accept="application/pdf" onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)} />
+            <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
+            <button disabled={!selectedPdf || uploadingMenu} onClick={upload}>
+              {uploadingMenu ? "Subiendo..." : menu?.current ? "Reemplazar carta" : "Guardar carta"}
+            </button>
+            {menuMessage ? <p className={menuMessage.startsWith("No") ? "error" : "muted"}>{menuMessage}</p> : null}
           </div>
           <div className="panel grid">
             <h2>Versiones</h2>
@@ -152,8 +198,9 @@ export function BusinessPanel({token}: {token: string}) {
           <h2>Mi QR</h2>
           <p className="muted">{menu?.public_code ? `/r/${menu.public_code}` : "Subí una carta para crear el link dinámico."}</p>
           <button onClick={generateQr}><QrCode size={18} /> Generar QR</button>
+          {qrDownloadError ? <p className="error">{qrDownloadError}</p> : null}
           <div className="grid two">
-            {qr.map((item) => <a className="card" key={item.id} href={assetUrl(item.asset_url)}>{item.qr_type} · descargar</a>)}
+            {qr.map((item) => <button className="card" key={item.id} onClick={() => downloadQr(item)}>{item.qr_type} · descargar</button>)}
           </div>
         </section>
       ) : null}

@@ -113,6 +113,7 @@ def test_dynamic_link_redirect_suspension_and_stable_code(client, db: Session) -
     response = client.get(f"/r/{code}", headers={"User-Agent": "Mobile Safari"})
     assert response.status_code == 302
     assert response.headers["location"] == f"/m/{code}/menu.pdf"
+    assert client.get(f"/m/{code}/menu.pdf").status_code == 200
     assert db.scalar(select(ScanEvent).where(ScanEvent.business_id == business.id)) is not None
 
     client.post(
@@ -128,7 +129,9 @@ def test_dynamic_link_redirect_suspension_and_stable_code(client, db: Session) -
     suspended = client.get(f"/r/{code}")
     assert suspended.status_code == 403
     assert "no se encuentra disponible" in suspended.text
+    assert client.get(f"/m/{code}/menu.pdf").status_code == 403
     assert client.get("/r/not-real").status_code == 404
+    assert client.get("/m/not-real/menu.pdf").status_code == 404
 
 
 def test_qr_payload_and_analytics_tenant_isolation(client, db: Session) -> None:
@@ -150,7 +153,12 @@ def test_qr_payload_and_analytics_tenant_isolation(client, db: Session) -> None:
     )
     assert generated.status_code == 200
     assert {item["qr_type"] for item in generated.json()} == {"standard", "branded"}
-    assert qr_payload(link.public_code) == f"/r/{link.public_code}"
+    assert qr_payload(link.public_code) == f"https://menu.example.test/r/{link.public_code}"
+    assert "/api/" not in qr_payload(link.public_code)
+    for item in generated.json():
+        download = client.get(item["asset_url"], headers=auth_headers(owner))
+        assert download.status_code == 200
+        assert download.content
 
     client.get(f"/r/{link.public_code}")
     client.get(f"/r/{link.public_code}")
@@ -230,5 +238,7 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
         headers=auth_headers(owner_a),
         json={"menu_asset_id": v1_asset.id},
     )
+    db.expire(link)
+    assert link.public_code == code
     assert client.get(f"/r/{code}").status_code == 302
     assert b"%v1" in client.get(f"/m/{code}/menu.pdf").content

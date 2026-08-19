@@ -5,7 +5,7 @@ import {useState} from "react";
 import {login} from "@/lib/api";
 
 export function LoginForm({onToken}: {onToken: (token: string) => void}) {
-  const [email, setEmail] = useState("owner@barcentral.local");
+  const [email, setEmail] = useState("owner@example.com");
   const [password, setPassword] = useState("owner12345");
   const [error, setError] = useState("");
 

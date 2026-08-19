@@ -12,7 +12,8 @@ from app.models import Business, DynamicLink, QRCode, QRStatus, QRType
 
 
 def qr_payload(public_code: str) -> str:
-    return f"/r/{public_code}"
+    base_url = get_settings().public_base_url.rstrip("/")
+    return f"{base_url}/r/{public_code}"
 
 
 def generate_qr_assets(db: Session, business_id: str) -> list[QRCode]:

@@ -40,6 +40,12 @@ export type DailyScan = {
   scans: number;
 };
 
+export type User = {
+  id: string;
+  email: string;
+  is_platform_admin: boolean;
+};
+
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -73,3 +79,31 @@ export function assetUrl(path: string): string {
   return `${API}${path}`;
 }
 
+export function canAccessAdmin(user: User | null): boolean {
+  return user?.is_platform_admin === true;
+}
+
+export async function currentUser(token: string): Promise<User> {
+  return request<User>("/api/me", token);
+}
+
+export async function downloadQrAsset(path: string, token: string): Promise<void> {
+  const response = await fetch(assetUrl(path), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = path.split("/").pop() ?? "qr";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}

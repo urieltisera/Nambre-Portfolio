@@ -21,8 +21,8 @@ Frontend: `http://localhost:3000`
 
 Credenciales de seed:
 
-- Platform admin: `admin@menuflow.local` / `admin12345`
-- Owner Bar Central: `owner@barcentral.local` / `owner12345`
+- Platform admin: `admin@example.com` / `admin12345`
+- Owner Bar Central: `owner@example.com` / `owner12345`
 
 ## Gates
 

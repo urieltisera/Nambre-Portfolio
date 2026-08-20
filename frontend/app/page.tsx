@@ -5,13 +5,16 @@ import {useState} from "react";
 import {AdminPanel} from "@/components/AdminPanel";
 import {BusinessPanel} from "@/components/BusinessPanel";
 import {LoginForm} from "@/components/LoginForm";
-import {canAccessAdmin, currentUser, User} from "@/lib/api";
+import {Alert} from "@/components/ui/Alert";
+import {Button} from "@/components/ui/Button";
+import {canAccessAdmin, currentUser, logout, User} from "@/lib/api";
 
 export default function Page() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [admin, setAdmin] = useState(false);
   const [error, setError] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
 
   async function handleToken(nextToken: string) {
     setError("");
@@ -28,20 +31,70 @@ export default function Page() {
     }
   }
 
-  if (!token) return <><LoginForm onToken={handleToken} />{error ? <main className="shell"><p className="error">{error}</p></main> : null}</>;
+  async function handleLogout() {
+    if (!token) return;
+    setLoggingOut(true);
+    try {
+      await logout(token);
+    } catch {
+      // El backend actual responde 204 sin estado servidor; limpiamos cliente igual.
+    } finally {
+      setToken(null);
+      setUser(null);
+      setAdmin(false);
+      setError("");
+      setLoggingOut(false);
+    }
+  }
+
+  if (!token) {
+    return (
+      <>
+        <LoginForm onToken={handleToken} />
+        {error ? (
+          <main className="page-frame page-frame--narrow">
+            <Alert tone="danger">{error}</Alert>
+          </main>
+        ) : null}
+      </>
+    );
+  }
 
   const canAdmin = canAccessAdmin(user);
 
   return (
     <>
-      <div className="shell actions">
-        <button className={!admin ? "active" : "secondary"} onClick={() => setAdmin(false)}>Negocio</button>
-        {canAdmin ? <button className={admin ? "active" : "secondary"} onClick={() => setAdmin(true)}>Admin</button> : null}
-      </div>
+      {canAdmin ? (
+        <div className="mode-switch">
+          <div className="mode-switch__group">
+            <Button onClick={() => setAdmin(false)} variant={!admin ? "primary" : "secondary"}>
+              Owner
+            </Button>
+            <Button onClick={() => setAdmin(true)} variant={admin ? "primary" : "secondary"}>
+              Admin
+            </Button>
+          </div>
+          <Button disabled={loggingOut} onClick={() => void handleLogout()} variant="ghost">
+            {loggingOut ? "Cerrando..." : "Cerrar sesión"}
+          </Button>
+        </div>
+      ) : null}
       {admin && canAdmin ? (
-        <main className="shell"><AdminPanel token={token} /></main>
+        <main className="page-frame">
+          <AdminPanel
+            onLogout={handleLogout}
+            onReturnToOwner={() => setAdmin(false)}
+            token={token}
+          />
+        </main>
       ) : (
-        <BusinessPanel isPlatformAdmin={canAdmin} token={token} />
+        <BusinessPanel
+          isPlatformAdmin={canAdmin}
+          onLogout={handleLogout}
+          onOpenAdmin={canAdmin ? () => setAdmin(true) : undefined}
+          token={token}
+          user={user}
+        />
       )}
     </>
   );

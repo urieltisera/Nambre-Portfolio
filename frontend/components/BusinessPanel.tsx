@@ -1,8 +1,30 @@
 "use client";
 
 import React from "react";
-import {BarChart3, FileUp, QrCode, RotateCcw} from "lucide-react";
+import {
+  BarChart3,
+  ChevronDown,
+  FileUp,
+  LayoutDashboard,
+  LogOut,
+  QrCode,
+  RotateCcw,
+  Settings,
+  Shield,
+  Store,
+} from "lucide-react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ActivityChart} from "@/components/owner/ActivityChart";
+import {OwnerAppShell} from "@/components/owner/OwnerAppShell";
+import {OwnerSettings} from "@/components/owner/OwnerSettings";
+import {Alert} from "@/components/ui/Alert";
+import {Badge} from "@/components/ui/Badge";
+import {Button} from "@/components/ui/Button";
+import {Card} from "@/components/ui/Card";
+import {EmptyState} from "@/components/ui/EmptyState";
+import {LoadingState} from "@/components/ui/LoadingState";
+import {PageHeader} from "@/components/ui/PageHeader";
+import {AnalyticsWindow, sliceDailySeries, toActivityPoints} from "@/lib/analytics";
 import {
   assetUrl,
   canOperateBusiness,
@@ -19,9 +41,10 @@ import {
   request,
   Summary,
   uploadErrorMessage,
+  User,
 } from "@/lib/api";
 
-type View = "dashboard" | "menu" | "qr" | "analytics";
+type View = "dashboard" | "menu" | "qr" | "analytics" | "business" | "settings";
 type QrGroupKey = "standard" | "branded";
 
 export type QrAssetGroup = {
@@ -36,9 +59,15 @@ export type QrAssetGroup = {
 export function BusinessPanel({
   token,
   isPlatformAdmin = false,
+  onLogout = async () => undefined,
+  onOpenAdmin,
+  user = null,
 }: {
   token: string;
   isPlatformAdmin?: boolean;
+  onLogout?: () => Promise<void> | void;
+  onOpenAdmin?: () => void;
+  user?: User | null;
 }) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [business, setBusiness] = useState<Business | null>(null);
@@ -46,6 +75,7 @@ export function BusinessPanel({
   const [summary, setSummary] = useState<Summary | null>(null);
   const [series, setSeries] = useState<DailyScan[]>([]);
   const [qr, setQr] = useState<QR[]>([]);
+  const [analyticsWindow, setAnalyticsWindow] = useState<AnalyticsWindow>(7);
   const [view, setView] = useState<View>("dashboard");
   const [error, setError] = useState("");
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
@@ -60,6 +90,7 @@ export function BusinessPanel({
 
   const businessId = business?.id;
   const isSuspended = business?.status === "suspended";
+  const canMutate = business ? canOperateBusiness(business.status) : false;
 
   const loadBusinesses = useCallback(async () => {
     const items = await listBusinesses(token, isPlatformAdmin);
@@ -79,7 +110,7 @@ export function BusinessPanel({
       request<Business>(`/api/businesses/${businessId}`, token),
       request<MenuState>(`/api/businesses/${businessId}/menu`, token),
       request<Summary>(`/api/businesses/${businessId}/analytics/summary`, token),
-      request<DailyScan[]>(`/api/businesses/${businessId}/analytics/scans?period=7d`, token),
+      request<DailyScan[]>(`/api/businesses/${businessId}/analytics/scans?period=30d`, token),
       request<QR[]>(`/api/businesses/${businessId}/qr`, token),
     ]);
     setBusiness(businessState);
@@ -131,8 +162,8 @@ export function BusinessPanel({
       setSelectedPdf(null);
       setMenuMessage("Carta guardada correctamente.");
       await refresh();
-    } catch (error: unknown) {
-      setMenuMessage(uploadErrorMessage("menu", error));
+    } catch (uploadError: unknown) {
+      setMenuMessage(uploadErrorMessage("menu", uploadError));
       await refresh();
     } finally {
       setUploadingMenu(false);
@@ -155,8 +186,8 @@ export function BusinessPanel({
       setSelectedLogo(null);
       setLogoMessage("Logo guardado correctamente.");
       await refresh();
-    } catch (error: unknown) {
-      setLogoMessage(uploadErrorMessage("logo", error));
+    } catch (uploadError: unknown) {
+      setLogoMessage(uploadErrorMessage("logo", uploadError));
       await refresh();
     } finally {
       setUploadingLogo(false);
@@ -200,136 +231,435 @@ export function BusinessPanel({
   }, [menu]);
 
   const qrGroups = useMemo(() => groupQrAssets(qr), [qr]);
-  const canMutate = business ? canOperateBusiness(business.status) : false;
+  const recentActivity = useMemo(() => sliceDailySeries(series, 7), [series]);
+  const selectedActivity = useMemo(
+    () => sliceDailySeries(series, analyticsWindow),
+    [analyticsWindow, series],
+  );
+  const recentActivityPoints = useMemo(() => toActivityPoints(recentActivity), [recentActivity]);
+  const selectedActivityPoints = useMemo(
+    () => toActivityPoints(selectedActivity),
+    [selectedActivity],
+  );
 
-  if (error) return <main className="shell"><p className="error">{error}</p></main>;
-  if (!business) return <main className="shell"><p>Cargando...</p></main>;
+  const navigationItems = useMemo(
+    () => [
+      {icon: <LayoutDashboard size={18} />, key: "dashboard", label: "Inicio"},
+      {icon: <FileUp size={18} />, key: "menu", label: "Mi carta"},
+      {icon: <QrCode size={18} />, key: "qr", label: "Mi QR"},
+      {icon: <BarChart3 size={18} />, key: "analytics", label: "Estadísticas"},
+      {icon: <Store size={18} />, key: "business", label: "Mi negocio"},
+      {icon: <Settings size={18} />, key: "settings", label: "Configuración"},
+    ],
+    [],
+  );
+
+  const sidebarBottom = (collapsed: boolean) => (
+    <div className={collapsed ? "sidebar-summary sidebar-summary--collapsed" : "sidebar-summary"}>
+      {!collapsed ? (
+        business ? (
+          <>
+            <div>
+              <strong>{business.name}</strong>
+              <p>{businessStatusLabel(business.status)}</p>
+            </div>
+            <Badge tone={statusTone(business.status)}>{businessStatusLabel(business.status)}</Badge>
+          </>
+        ) : (
+          <p className="muted">Sin negocio activo</p>
+        )
+      ) : null}
+      <Button
+        aria-label="Cerrar sesión"
+        className={collapsed ? "sidebar-summary__logout" : undefined}
+        data-tooltip={collapsed ? "Cerrar sesión" : undefined}
+        onClick={() => void onLogout()}
+        title={collapsed ? "Cerrar sesión" : undefined}
+        variant="secondary"
+      >
+        {collapsed ? <LogOut size={18} /> : "Cerrar sesión"}
+      </Button>
+    </div>
+  );
+
+  const desktopUtility = (
+    <div className="shell-toolbar">
+      {businesses.length > 1 ? (
+        <label className="business-switcher">
+          <span>Negocio actual</span>
+          <span className="business-switcher__field">
+            <select
+              aria-label="Seleccionar negocio"
+              value={business?.id ?? ""}
+              onChange={(event) =>
+                setBusiness(businesses.find((item) => item.id === event.target.value) ?? null)
+              }
+            >
+              {businesses.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={16} />
+          </span>
+        </label>
+      ) : null}
+      {onOpenAdmin ? (
+        <Button onClick={onOpenAdmin} variant="ghost">
+          <Shield size={16} /> Ir a Admin
+        </Button>
+      ) : null}
+    </div>
+  );
+
+  if (error) {
+    return (
+      <main className="page-frame">
+        <Alert tone="danger">{error}</Alert>
+      </main>
+    );
+  }
+
+  if (!business && businesses.length === 0) {
+    return (
+      <main className="page-frame">
+        <LoadingState message="Buscamos tu negocio y la configuración actual." />
+      </main>
+    );
+  }
+
+  if (!business) {
+    return (
+      <main className="page-frame">
+        <EmptyState
+          description="Iniciá sesión con un usuario que tenga membership o cargá datos de seed."
+          title="No encontramos un negocio disponible"
+        />
+      </main>
+    );
+  }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div>
-          <h1>{business.name.toUpperCase()}</h1>
-          <p className="muted">
-            Estado: {businessStatusLabel(business.status)} · Carta: {menu?.current ? "● Publicada" : "Pendiente"} · Última actualización: {lastUpdate}
-          </p>
-        </div>
-        <select value={business.id} onChange={(event) => setBusiness(businesses.find((item) => item.id === event.target.value) ?? null)}>
-          {businesses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-      </header>
-
+    <OwnerAppShell
+      activeView={view}
+      bottomContent={sidebarBottom}
+      desktopUtility={desktopUtility}
+      items={navigationItems}
+      mobileTitle={business.name}
+      onNavigate={(next) => setView(next as View)}
+      title="MenuFlow"
+    >
       {isSuspended ? (
-        <section className="panel suspended-panel" data-testid="suspended-panel">
-          <strong>Negocio suspendido</strong>
-          <p className="muted">
-            El contenido histórico sigue visible, pero las acciones de publicación quedan bloqueadas hasta que un admin lo reactive.
-          </p>
-        </section>
+        <div data-testid="suspended-panel">
+          <Alert className="owner-alert" tone="warning" title="Negocio suspendido">
+            El contenido histórico sigue visible, pero las acciones de publicación quedan
+            bloqueadas hasta que un admin lo reactive.
+          </Alert>
+        </div>
       ) : null}
-
-      <nav className="tabs">
-        {(["dashboard", "menu", "qr", "analytics"] as View[]).map((item) => (
-          <button key={item} className={view === item ? "active" : ""} onClick={() => setView(item)}>
-            {item === "menu" ? "Mi carta" : item === "qr" ? "Mi QR" : item === "analytics" ? "Estadísticas" : "Dashboard"}
-          </button>
-        ))}
-      </nav>
-
       {view === "dashboard" ? (
-        <section className="grid">
-          <div className="metrics">
-            <Metric label="Escaneos hoy" value={summary?.scans_today ?? 0} />
-            <Metric label="Últimos 7 días" value={summary?.scans_7d ?? 0} />
-            <Metric label="Últimos 30 días" value={summary?.scans_30d ?? 0} />
+        <section className="owner-view owner-view--dashboard">
+          <PageHeader
+            subtitle="Así está funcionando tu carta digital hoy."
+            title={`Hola, ${business.name} 👋`}
+          />
+          <div className="metric-grid">
+            <MetricCard
+              helper={new Date().toLocaleDateString("es-AR")}
+              label="Visualizaciones hoy"
+              value={summary?.scans_today ?? 0}
+            />
+            <MetricCard
+              helper="Actividad real reciente"
+              label="Últimos 7 días"
+              value={summary?.scans_7d ?? 0}
+            />
+            <MetricCard
+              helper="Ventana completa disponible"
+              label="Últimos 30 días"
+              value={summary?.scans_30d ?? 0}
+            />
+            <MetricCard
+              helper="Últimos 30 días"
+              label="Hora pico"
+              value={formatPeakHour(summary?.busiest_hour ?? null)}
+            />
           </div>
-          <div className="actions">
-            <button onClick={() => setView("menu")}><FileUp size={18} /> Reemplazar carta</button>
-            <button onClick={() => setView("qr")}><QrCode size={18} /> Descargar QR</button>
-            <button onClick={() => setView("analytics")}><BarChart3 size={18} /> Ver estadísticas</button>
+          <div className="content-grid">
+            <Card className="panel-stack">
+              <h2>Resumen rápido</h2>
+              <p className="muted">
+                Estado: {businessStatusLabel(business.status)} · Carta:{" "}
+                {menu?.current ? "Publicada" : "Pendiente"} · Última actualización: {lastUpdate}
+              </p>
+              <ActivityChart
+                contained={false}
+                description="Actividad reciente de los últimos 7 días."
+                emptyDescription="Todavía no hay actividad de escaneos para mostrar."
+                emptyTitle="Sin actividad reciente"
+                points={recentActivityPoints}
+                title="Actividad reciente"
+                variant="compact"
+              />
+            </Card>
+            <Card className="panel-stack">
+              <h2>Acciones rápidas</h2>
+              <p className="muted visual-detail">Los accesos directos siguen usando la operación real del negocio.</p>
+              <Button onClick={() => setView("menu")}>
+                <FileUp size={18} /> Actualizar carta
+              </Button>
+              <Button onClick={() => setView("qr")} variant="secondary">
+                <QrCode size={18} /> Ver mi QR
+              </Button>
+              <Button onClick={() => setView("analytics")} variant="secondary">
+                <BarChart3 size={18} /> Ver estadísticas
+              </Button>
+            </Card>
           </div>
         </section>
       ) : null}
 
       {view === "menu" ? (
-        <section className="grid two">
-          <div className="panel grid">
-            <h2>Mi carta</h2>
-            <p>{menu?.current?.original_filename ?? "No hay PDF publicado"}</p>
-            <label className="muted">Logo</label>
-            <input disabled={!canMutate} type="file" accept="image/png,image/jpeg" onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)} />
-            <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
-            {business.logo_url ? (
-              <div className="asset-preview">
-                <img
-                  alt={`Logo de ${business.name}`}
-                  className="logo-preview"
-                  src={assetUrl(`${business.logo_url}?t=${encodeURIComponent(business.updated_at ?? Date.now().toString())}`)}
+        <section className="owner-view">
+          <PageHeader
+            subtitle="Actualizá tu menú cuando quieras sin cambiar el QR de tus mesas."
+            title="Mi carta"
+          />
+          <div className="content-grid">
+            <Card className="panel-stack">
+              <h2>Carta actual</h2>
+              <p>{menu?.current?.original_filename ?? "No hay PDF publicado"}</p>
+              <Badge tone={menu?.current ? "success" : "warning"}>
+                {menu?.current ? "Publicada" : "Pendiente"}
+              </Badge>
+              <p className="muted">Última actualización: {lastUpdate}</p>
+              <Alert tone="info">
+                Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF todas las
+                veces que necesites, sin reimprimir nada.
+              </Alert>
+            </Card>
+            <Card className="panel-stack">
+              <h2>Logo y PDF</h2>
+              <label className="field">
+                <span className="field__label">Logo</span>
+                <input
+                  className="ui-input"
+                  disabled={!canMutate}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
                 />
-              </div>
-            ) : null}
-            <button disabled={!canMutate || !selectedLogo || uploadingLogo} onClick={uploadLogo}>
-              {uploadingLogo ? "Guardando..." : "Guardar logo"}
-            </button>
-            {logoMessage ? <p className={logoMessage.includes("correctamente") ? "muted" : "error"}>{logoMessage}</p> : null}
-            <label className="muted">PDF</label>
-            <input disabled={!canMutate} type="file" accept="application/pdf" onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)} />
-            <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
-            <button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
-              {uploadingMenu ? "Guardando..." : menu?.current ? "Reemplazar carta" : "Guardar carta"}
-            </button>
-            {menuMessage ? <p className={menuMessage.includes("correctamente") ? "muted" : "error"}>{menuMessage}</p> : null}
+              </label>
+              <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
+              {business.logo_url ? (
+                <div className="asset-preview">
+                  <img
+                    alt={`Logo de ${business.name}`}
+                    className="logo-preview"
+                    src={assetUrl(
+                      `${business.logo_url}?t=${encodeURIComponent(
+                        business.updated_at ?? Date.now().toString(),
+                      )}`,
+                    )}
+                  />
+                </div>
+              ) : null}
+              <Button disabled={!canMutate || !selectedLogo || uploadingLogo} onClick={uploadLogo}>
+                {uploadingLogo ? "Guardando..." : "Guardar logo"}
+              </Button>
+              {logoMessage ? (
+                <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
+                  {logoMessage}
+                </Alert>
+              ) : null}
+
+              <label className="field">
+                <span className="field__label">PDF</span>
+                <input
+                  className="ui-input"
+                  disabled={!canMutate}
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
+              <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
+                {uploadingMenu ? "Guardando..." : menu?.current ? "Reemplazar carta" : "Guardar carta"}
+              </Button>
+              {menuMessage ? (
+                <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
+                  {menuMessage}
+                </Alert>
+              ) : null}
+            </Card>
           </div>
-          <div className="panel grid">
-            <h2>Versiones</h2>
-            {menu?.versions.map((asset) => (
-              <div className="card actions" key={asset.id}>
-                <span>
-                  v{asset.version} · {asset.original_filename} · {asset.status === "active" ? "Carta actual" : "Versión anterior"}
-                </span>
-                {asset.status === "archived" ? (
-                  <button className="secondary" disabled={!canMutate} onClick={() => rollback(asset.id)}>
-                    <RotateCcw size={16} /> Restaurar esta versión
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          </div>
+          <Card className="panel-stack">
+            <h2>Versiones publicadas</h2>
+            <div className="stack-list">
+              {menu?.versions.length ? (
+                menu.versions.map((asset) => (
+                  <div className="list-row list-row--actions" key={asset.id}>
+                    <div>
+                      <strong>
+                        v{asset.version} · {asset.original_filename}
+                      </strong>
+                      <p className="muted">
+                        {asset.status === "active" ? "Carta actual" : "Versión anterior"}
+                      </p>
+                    </div>
+                    {asset.status === "archived" ? (
+                      <Button
+                        disabled={!canMutate}
+                        onClick={() => void rollback(asset.id)}
+                        variant="secondary"
+                      >
+                        <RotateCcw size={16} /> Restaurar esta versión
+                      </Button>
+                    ) : (
+                      <Badge tone="success">Activa</Badge>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <EmptyState
+                  description="Subí tu primer PDF para comenzar a usar MenuFlow."
+                  title="Todavía no subiste una carta"
+                />
+              )}
+            </div>
+          </Card>
         </section>
       ) : null}
 
       {view === "qr" ? (
-        <QrSection
-          canGenerate={canMutate}
-          downloadError={qrDownloadError}
-          generatingQr={generatingQr}
-          groups={qrGroups}
-          onDownloadError={setQrDownloadError}
-          onGenerateQr={generateQr}
-          previewVersion={qrPreviewVersion}
-          publicCode={menu?.public_code ?? null}
-          token={token}
-        />
+        <section className="owner-view">
+          <PageHeader subtitle="El mismo QR, aunque cambies tu carta." title="Mi QR" />
+          <QrSection
+            canGenerate={canMutate}
+            downloadError={qrDownloadError}
+            generatingQr={generatingQr}
+            groups={qrGroups}
+            onDownloadError={setQrDownloadError}
+            onGenerateQr={generateQr}
+            previewVersion={qrPreviewVersion}
+            publicCode={menu?.public_code ?? null}
+            token={token}
+          />
+        </section>
       ) : null}
 
       {view === "analytics" ? (
-        <section className="grid">
-          <div className="metrics">
-            <Metric label="Hoy" value={summary?.scans_today ?? 0} />
-            <Metric label="7 días" value={summary?.scans_7d ?? 0} />
-            <Metric label="Hora pico" value={formatPeakHour(summary?.busiest_hour ?? null)} />
+        <section className="owner-view">
+          <PageHeader
+            subtitle="Conocé cómo tus clientes utilizan tu carta."
+            title="Estadísticas"
+          />
+          <div className="metric-grid">
+            <MetricCard helper="Visitas del día" label="Hoy" value={summary?.scans_today ?? 0} />
+            <MetricCard helper="Ventana corta" label="7 días" value={summary?.scans_7d ?? 0} />
+            <MetricCard helper="Ventana completa" label="30 días" value={summary?.scans_30d ?? 0} />
+            <MetricCard helper="Últimos 30 días" label="Hora pico" value={formatPeakHour(summary?.busiest_hour ?? null)} />
           </div>
-          <div className="panel grid">
-            {series.map((item) => <div key={item.date}>{item.date}: {item.scans}</div>)}
+          <ActivityChart
+            description="Serie diaria real derivada del backend actual."
+            emptyDescription="No hay suficiente actividad todavía para mostrar una serie."
+            emptyTitle="Sin datos de analytics"
+            onWindowChange={setAnalyticsWindow}
+            points={selectedActivityPoints}
+            title="Visualizaciones por día"
+            window={analyticsWindow}
+          />
+        </section>
+      ) : null}
+
+      {view === "business" ? (
+        <section className="owner-view">
+          <PageHeader
+            subtitle="Esta pantalla queda preparada mientras rediseñamos la edición completa del negocio."
+            title="Mi negocio"
+          />
+          <div className="content-grid">
+            <Card className="panel-stack">
+              <h2>Resumen del negocio</h2>
+              <div className="detail-list">
+                <div>
+                  <dt>Nombre</dt>
+                  <dd>{business.name}</dd>
+                </div>
+                <div>
+                  <dt>Slug</dt>
+                  <dd>{business.slug}</dd>
+                </div>
+                <div>
+                  <dt>Estado</dt>
+                  <dd>{businessStatusLabel(business.status)}</dd>
+                </div>
+              </div>
+            </Card>
+            <Card className="panel-stack">
+              <h2>Logo actual</h2>
+              {business.logo_url ? (
+                <div className="asset-preview">
+                  <img
+                    alt={`Logo de ${business.name}`}
+                    className="logo-preview"
+                    src={assetUrl(
+                      `${business.logo_url}?t=${encodeURIComponent(
+                        business.updated_at ?? Date.now().toString(),
+                      )}`,
+                    )}
+                  />
+                </div>
+              ) : (
+                <EmptyState
+                  description="Podés cargarlo desde Mi carta mientras terminamos esta sección."
+                  title="Todavía no configuraste un logo"
+                />
+              )}
+              <Button onClick={() => setView("menu")} variant="secondary">
+                Ir a Mi carta
+              </Button>
+            </Card>
           </div>
         </section>
       ) : null}
-    </main>
+
+      {view === "settings" && user ? (
+        <OwnerSettings
+          business={business}
+          onLogout={onLogout}
+          onNavigateBusiness={() => setView("business")}
+          user={user}
+        />
+      ) : null}
+    </OwnerAppShell>
   );
 }
 
-function Metric({label, value}: {label: string; value: number | string}) {
-  return <div className="card metric"><span>{label}</span><strong>{value}</strong></div>;
+function MetricCard({
+  helper,
+  label,
+  value,
+}: {
+  helper?: string;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <Card className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {helper ? <small className="metric-card__helper">{helper}</small> : null}
+    </Card>
+  );
+}
+
+function statusTone(status: Business["status"]): "success" | "warning" | "danger" {
+  if (status === "active") return "success";
+  if (status === "demo") return "warning";
+  return "danger";
 }
 
 export function groupQrAssets(qr: QR[]): QrAssetGroup[] {
@@ -394,21 +724,23 @@ export function QrSection({
   downloadAsset,
 }: QrSectionProps) {
   return (
-    <section className="panel grid">
-      <h2>Mi QR</h2>
-      <p className="muted">
-        {publicCode ? `/r/${publicCode}` : "Subí una carta para crear el link dinámico."}
-      </p>
-      <button disabled={!canGenerate || generatingQr} onClick={() => void onGenerateQr()}>
-        <QrCode size={18} /> {generatingQr ? "Generando..." : "Generar QR"}
-      </button>
-      {!canGenerate ? (
-        <p className="muted">Este negocio está suspendido. Reactivalo desde Admin para volver a operar.</p>
-      ) : !groups.some((group) => group.pngAsset || group.svgAsset) && !publicCode ? (
-        <p className="muted">Subí una carta y activá el negocio para generar QR.</p>
-      ) : null}
-      {downloadError ? <p className="error">{downloadError}</p> : null}
-      <div className="grid two">
+    <section className="panel-stack">
+      <Card className="panel-stack">
+        <h2>Tu QR permanente</h2>
+        <p className="muted">
+          {publicCode ? `/r/${publicCode}` : "Subí una carta para crear el link dinámico."}
+        </p>
+        <Button disabled={!canGenerate || generatingQr} onClick={() => void onGenerateQr()}>
+          <QrCode size={18} /> {generatingQr ? "Generando..." : "Generar QR"}
+        </Button>
+        {!canGenerate ? (
+          <p className="muted">Este negocio está suspendido. Reactivalo desde Admin para volver a operar.</p>
+        ) : !groups.some((group) => group.pngAsset || group.svgAsset) && !publicCode ? (
+          <p className="muted">Subí una carta y activá el negocio para generar QR.</p>
+        ) : null}
+        {downloadError ? <Alert tone="danger">{downloadError}</Alert> : null}
+      </Card>
+      <div className="content-grid">
         {groups.map((group) => (
           <QrPreviewCard
             downloadAsset={downloadAsset}
@@ -502,37 +834,35 @@ export function QrPreviewCard({
   }
 
   return (
-    <div className="card grid" data-testid={`qr-card-${group.key}`}>
+    <Card className="panel-stack" data-testid={`qr-card-${group.key}`}>
       <strong>{group.title}</strong>
       <p className="muted">{group.description}</p>
       <div className="asset-preview qr-preview" data-testid={`qr-preview-${group.key}`}>
         {previewLoading ? <p className="muted">Cargando vista previa...</p> : null}
         {!previewLoading && previewError ? <p className="error">{previewError}</p> : null}
         {!previewLoading && !previewError && previewUrl ? (
-          <img
-            alt={`Preview ${group.title}`}
-            src={previewUrl}
-          />
+          <img alt={`Preview ${group.title}`} src={previewUrl} />
         ) : null}
         {!previewLoading && !previewError && !previewUrl ? (
           <p className="muted">Generá el QR para ver la vista previa.</p>
         ) : null}
       </div>
       <div className="actions">
-        <button
+        <Button
           disabled={!group.pngAsset}
           onClick={() => void handleDownload(group.pngAsset?.asset_url ?? null)}
+          variant="secondary"
         >
           Descargar PNG
-        </button>
-        <button
-          className="secondary"
+        </Button>
+        <Button
           disabled={!group.svgAsset}
           onClick={() => void handleDownload(group.svgAsset?.asset_url ?? null)}
+          variant="ghost"
         >
           Descargar SVG
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

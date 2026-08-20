@@ -5,8 +5,8 @@ COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
 
-ARG NEXT_PUBLIC_API_BASE_URL
-ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ARG API_PROXY_TARGET
+ENV API_PROXY_TARGET=$API_PROXY_TARGET
 
 RUN npm run build
 CMD npm run start

@@ -7,6 +7,7 @@ import Page from "../app/page";
 
 const mocks = vi.hoisted(() => ({
   currentUser: vi.fn(),
+  logout: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -14,6 +15,7 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     currentUser: mocks.currentUser,
+    logout: mocks.logout,
   };
 });
 
@@ -24,7 +26,12 @@ vi.mock("@/components/LoginForm", () => ({
 }));
 
 vi.mock("@/components/BusinessPanel", () => ({
-  BusinessPanel: () => <div>Business panel</div>,
+  BusinessPanel: ({onLogout}: {onLogout: () => void}) => (
+    <div>
+      <div>Business panel</div>
+      <button onClick={() => void onLogout()}>Mock logout</button>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/AdminPanel", () => ({
@@ -34,6 +41,7 @@ vi.mock("@/components/AdminPanel", () => ({
 afterEach(() => {
   cleanup();
   mocks.currentUser.mockReset();
+  mocks.logout.mockReset();
 });
 
 describe("Page", () => {
@@ -52,5 +60,25 @@ describe("Page", () => {
     });
     expect(screen.getByText("Business panel")).toBeTruthy();
     expect(screen.queryByRole("button", {name: "Admin"})).toBeNull();
+  });
+
+  it("calls logout and returns to login after closing the session", async () => {
+    mocks.currentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "owner-1",
+      is_platform_admin: false,
+    });
+
+    render(<Page />);
+    fireEvent.click(screen.getByRole("button", {name: "Mock login"}));
+
+    await screen.findByText("Business panel");
+    fireEvent.click(screen.getByRole("button", {name: "Mock logout"}));
+
+    await waitFor(() => {
+      expect(mocks.logout).toHaveBeenCalledWith("owner-token");
+    });
+    expect(screen.getByRole("button", {name: "Mock login"})).toBeTruthy();
+    expect(screen.queryByText("Business panel")).toBeNull();
   });
 });

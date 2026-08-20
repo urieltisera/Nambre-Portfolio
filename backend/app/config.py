@@ -14,7 +14,15 @@ class Settings(BaseSettings):
     max_pdf_bytes: int = 10 * 1024 * 1024
     storage_path: str = "storage"
     public_base_url: str = "http://localhost:8000"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origin_regex: str | None = (
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|"
+        r"10(?:\.\d{1,3}){3}|"
+        r"192\.168(?:\.\d{1,3}){2}|"
+        r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+        r")(?::\d+)?$"
+    )
     login_rate_limit_per_minute: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

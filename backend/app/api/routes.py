@@ -36,6 +36,7 @@ from app.schemas import (
     BusinessPatch,
     DailyScanOut,
     LoginIn,
+    MenuAssetOut,
     MenuStateOut,
     OwnerAssignIn,
     QRCodeOut,
@@ -184,8 +185,12 @@ def menu_state(
     ).all()
     current = get_active_menu(db, business_id)
     link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business_id))
+    current_out = MenuAssetOut.model_validate(current) if current is not None else None
+    versions_out = [MenuAssetOut.model_validate(asset) for asset in versions]
     return MenuStateOut(
-        current=current, versions=list(versions), public_code=link.public_code if link else None
+        current=current_out,
+        versions=versions_out,
+        public_code=link.public_code if link else None,
     )
 
 

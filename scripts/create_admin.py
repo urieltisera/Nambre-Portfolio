@@ -17,7 +17,7 @@ def _ensure_backend_on_path() -> None:
 _ensure_backend_on_path()
 
 from app.db import SessionLocal
-from app.services.user_admin_service import (  # noqa: E402
+from app.services.user_admin_service import (
     AdminCreationError,
     CreatePlatformAdminResult,
     create_platform_admin,
@@ -28,7 +28,9 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create a real MenuFlow platform admin without exposing passwords."
     )
-    parser.add_argument("--email", help="Admin email. Falls back to ADMIN_EMAIL or interactive input.")
+    parser.add_argument(
+        "--email", help="Admin email. Falls back to ADMIN_EMAIL or interactive input."
+    )
     parser.add_argument(
         "--password",
         help="Admin password. Prefer ADMIN_PASSWORD or interactive input to avoid shell history leaks.",
@@ -47,7 +49,9 @@ def _read_email(args: argparse.Namespace) -> str:
         return email
     if sys.stdin.isatty():
         return input("Admin email: ").strip()
-    raise SystemExit("Missing admin email. Pass --email, set ADMIN_EMAIL, or run interactively.")
+    raise SystemExit(
+        "Missing admin email. Pass --email, set ADMIN_EMAIL, or run interactively."
+    )
 
 
 def _read_password(args: argparse.Namespace) -> str:

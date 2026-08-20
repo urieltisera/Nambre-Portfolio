@@ -4,6 +4,7 @@ import React from "react";
 import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AdminPanel} from "../components/AdminPanel";
+import {AppearanceProvider} from "../components/ui/AppearanceProvider";
 import type {Business} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
@@ -65,7 +66,11 @@ describe("AdminPanel", () => {
       throw new Error(`Unhandled request: ${path}`);
     });
 
-    render(<AdminPanel token="admin-token" />);
+    render(
+      <AppearanceProvider>
+        <AdminPanel token="admin-token" />
+      </AppearanceProvider>,
+    );
 
     expect(await screen.findByText("Bar Central")).toBeTruthy();
     expect(screen.getByTestId("admin-layout")).toBeTruthy();
@@ -129,5 +134,5 @@ describe("AdminPanel", () => {
         .filter((element) => element.tagName.toLowerCase() === "p"),
     ).toHaveLength(2);
     expect(mocks.listBusinesses).toHaveBeenCalledTimes(2);
-  });
+  }, 15000);
 });

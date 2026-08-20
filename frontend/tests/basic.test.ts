@@ -9,11 +9,8 @@ import {
   uploadErrorMessage,
 } from "../lib/api";
 
-const CONFIGURED_API_BASE = "http://example.test:8000";
-
-async function loadApiModule(apiBase = CONFIGURED_API_BASE) {
+async function loadApiModule() {
   vi.resetModules();
-  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", apiBase);
   return import("../lib/api");
 }
 
@@ -29,12 +26,10 @@ describe("frontend smoke", () => {
     expect("Un solo QR para siempre").toContain("QR");
   });
 
-  it("builds backend asset urls from the configured API base", async () => {
+  it("builds backend asset urls as same-origin relative paths", async () => {
     const {assetUrl} = await loadApiModule();
 
-    expect(assetUrl("/api/businesses/biz/qr-assets/standard.png")).toBe(
-      `${CONFIGURED_API_BASE}/api/businesses/biz/qr-assets/standard.png`,
-    );
+    expect(assetUrl("/api/businesses/biz/qr-assets/standard.png")).toBe("/api/businesses/biz/qr-assets/standard.png");
   });
 
   it("only grants admin navigation to platform admins", () => {
@@ -78,10 +73,10 @@ describe("frontend smoke", () => {
     const [requestedUrl, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${CONFIGURED_API_BASE}/api/businesses/biz/qr-assets/standard.png`,
+      "/api/businesses/biz/qr-assets/standard.png",
       {cache: "no-store", headers: {Authorization: "Bearer abc123"}},
     );
-    expect(requestedUrl).toBe(`${CONFIGURED_API_BASE}/api/businesses/biz/qr-assets/standard.png`);
+    expect(requestedUrl).toBe("/api/businesses/biz/qr-assets/standard.png");
     expect(requestedUrl).not.toContain("?");
     expect(requestInit).toEqual({
       cache: "no-store",
@@ -107,10 +102,10 @@ describe("frontend smoke", () => {
 
     expect(blob).toBeInstanceOf(Blob);
     expect(fetchMock).toHaveBeenCalledWith(
-      `${CONFIGURED_API_BASE}/api/businesses/biz/qr-assets/branded.png`,
+      "/api/businesses/biz/qr-assets/branded.png",
       {cache: "no-store", headers: {Authorization: "Bearer abc123"}},
     );
-    expect(requestedUrl).toBe(`${CONFIGURED_API_BASE}/api/businesses/biz/qr-assets/branded.png`);
+    expect(requestedUrl).toBe("/api/businesses/biz/qr-assets/branded.png");
     expect(requestedUrl).not.toContain("?");
     expect(requestInit).toEqual({
       cache: "no-store",

@@ -53,7 +53,7 @@ export type BusinessStatusAction = {
   nextStatus: Business["status"];
 };
 
-const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API = "";
 
 export class ApiError extends Error {
   status: number;
@@ -87,10 +87,20 @@ export async function login(email: string, password: string): Promise<string> {
     body: JSON.stringify({email, password}),
   });
   if (!response.ok) {
-    throw new Error("Credenciales inválidas");
+    if (response.status === 401) {
+      throw new Error("El email o la contraseña no son correctos.");
+    }
+    throw new Error("No se pudo iniciar sesión.");
   }
   const data = (await response.json()) as { access_token: string };
   return data.access_token;
+}
+
+export async function logout(token: string): Promise<void> {
+  await fetch(`${API}/auth/logout`, {
+    headers: {Authorization: `Bearer ${token}`},
+    method: "POST",
+  });
 }
 
 export function assetUrl(path: string): string {
@@ -99,6 +109,10 @@ export function assetUrl(path: string): string {
 
 export function canAccessAdmin(user: User | null): boolean {
   return user?.is_platform_admin === true;
+}
+
+export function userRoleLabel(user: User): "Platform Admin" | "Owner" {
+  return user.is_platform_admin ? "Platform Admin" : "Owner";
 }
 
 export function businessStatusLabel(status: Business["status"]): "Activo" | "Demo" | "Suspendido" {

@@ -1,9 +1,10 @@
 import importlib.util
 from base64 import b64decode
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Sequence, cast
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo

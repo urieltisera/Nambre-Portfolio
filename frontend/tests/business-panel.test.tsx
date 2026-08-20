@@ -4,6 +4,7 @@ import React from "react";
 import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {BusinessPanel} from "../components/BusinessPanel";
+import {AppearanceProvider} from "../components/ui/AppearanceProvider";
 import type {Business, MenuState} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +34,10 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+function renderPanel(ui: React.ReactElement) {
+  return render(<AppearanceProvider>{ui}</AppearanceProvider>);
+}
 
 describe("BusinessPanel logo flow", () => {
   it("refreshes the branded preview after regenerating QR for a new logo without touching the PDF", async () => {
@@ -115,7 +120,7 @@ describe("BusinessPanel logo flow", () => {
       if (path === "/api/businesses/biz-1/analytics/summary") {
         return {busiest_hour: 12, scans_30d: 30, scans_7d: 7, scans_today: 1};
       }
-      if (path === "/api/businesses/biz-1/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-1/analytics/scans?period=30d") return [];
       if (path === "/api/businesses/biz-1/qr") return currentQr;
       if (path === "/api/businesses/biz-1/logo" && init?.method === "POST") {
         logoUploads += 1;
@@ -145,9 +150,9 @@ describe("BusinessPanel logo flow", () => {
     vi.stubGlobal("URL", {createObjectURL, revokeObjectURL});
     vi.stubGlobal("confirm", vi.fn(() => true));
 
-    const {container} = render(<BusinessPanel token="owner-token" />);
+    const {container} = renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("DEMO BIZ");
+    await screen.findByText("Hola, Demo Biz 👋");
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
     const [logoInput] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
@@ -254,14 +259,14 @@ describe("BusinessPanel logo flow", () => {
       if (path === "/api/businesses/biz-admin/analytics/summary") {
         return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
       }
-      if (path === "/api/businesses/biz-admin/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-admin/analytics/scans?period=30d") return [];
       if (path === "/api/businesses/biz-admin/qr") return [];
       throw new Error(`Unhandled request: ${path}`);
     });
 
-    render(<BusinessPanel isPlatformAdmin token="admin-token" />);
+    renderPanel(<BusinessPanel isPlatformAdmin token="admin-token" user={null} />);
 
-    await screen.findByText("ADMIN BIZ");
+    await screen.findByText("Hola, Admin Biz 👋");
     expect(mocks.listBusinesses).toHaveBeenCalledWith("admin-token", true);
   });
 
@@ -311,16 +316,16 @@ describe("BusinessPanel logo flow", () => {
       if (path === "/api/businesses/biz-2/analytics/summary") {
         return {busiest_hour: 5, scans_30d: 30, scans_7d: 7, scans_today: 1};
       }
-      if (path === "/api/businesses/biz-2/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-2/analytics/scans?period=30d") return [];
       if (path === "/api/businesses/biz-2/qr") return [];
       throw new Error(`Unhandled request: ${path}`);
     });
 
     vi.stubGlobal("confirm", vi.fn(() => true));
 
-    const {container} = render(<BusinessPanel token="owner-token" />);
+    const {container} = renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("CAFE NORTE");
+    await screen.findByText("Hola, Cafe Norte 👋");
     expect(screen.getByTestId("suspended-panel")).toBeTruthy();
     expect(screen.getByText("Negocio suspendido")).toBeTruthy();
 
@@ -397,7 +402,7 @@ describe("BusinessPanel logo flow", () => {
       if (path === "/api/businesses/biz-3/analytics/summary") {
         return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
       }
-      if (path === "/api/businesses/biz-3/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-3/analytics/scans?period=30d") return [];
       if (path === "/api/businesses/biz-3/qr") return [];
       if (path === "/api/businesses/biz-3/menu/replace" && init?.method === "POST") {
         currentMenuState = {
@@ -468,9 +473,9 @@ describe("BusinessPanel logo flow", () => {
 
     vi.stubGlobal("confirm", vi.fn(() => true));
 
-    const {container} = render(<BusinessPanel token="owner-token" />);
+    const {container} = renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("BAR CENTRAL");
+    await screen.findByText("Hola, Bar Central 👋");
     await waitFor(() => {
       expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
     });
@@ -492,5 +497,55 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() => {
       expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
     });
+  });
+
+  it("switches analytics between 7 and 30 real days without changing the source endpoint", async () => {
+    const business: Business = {
+      id: "biz-4",
+      logo_url: null,
+      name: "Analytics Biz",
+      slug: "analytics-biz",
+      status: "active",
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+    const series30 = Array.from({length: 30}, (_, index) => ({
+      date: `2026-08-${String(index + 1).padStart(2, "0")}`,
+      scans: index + 1,
+    }));
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-4") return business;
+      if (path === "/api/businesses/biz-4/menu") {
+        return {current: null, public_code: null, versions: []};
+      }
+      if (path === "/api/businesses/biz-4/analytics/summary") {
+        return {busiest_hour: 21, scans_30d: 465, scans_7d: 189, scans_today: 30};
+      }
+      if (path === "/api/businesses/biz-4/analytics/scans?period=30d") return series30;
+      if (path === "/api/businesses/biz-4/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByText("Hola, Analytics Biz 👋");
+    fireEvent.click(screen.getByRole("button", {name: "Estadísticas"}));
+
+    const [windowSwitcher] = screen.getAllByRole("tablist", {name: "Ventana de actividad"});
+    expect(within(windowSwitcher).getByRole("tab", {name: "7 días"}).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("activity-chart-summary").textContent).toContain("189");
+
+    fireEvent.click(within(windowSwitcher).getByRole("tab", {name: "30 días"}));
+
+    await waitFor(() => {
+      expect(within(windowSwitcher).getByRole("tab", {name: "30 días"}).getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByTestId("activity-chart-summary").textContent).toContain("465");
+    });
+
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/api/businesses/biz-4/analytics/scans?period=30d",
+      "owner-token",
+    );
   });
 });

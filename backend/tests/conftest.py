@@ -12,6 +12,7 @@ os.environ["SECRET_KEY"] = "test-secret-key-change-me-32-bytes-minimum"
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["STORAGE_PATH"] = tempfile.mkdtemp(prefix="menuflow-tests-")
 os.environ["PUBLIC_BASE_URL"] = "https://menu.example.test"
+os.environ["APP_TIMEZONE"] = "America/Argentina/Buenos_Aires"
 
 from app.auth.security import create_access_token, hash_password  # noqa: E402
 from app.db import Base, get_db  # noqa: E402

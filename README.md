@@ -52,6 +52,12 @@ npm run build
 
 `GET /r/{public_code}` usa `302 Found`. La ruta registra el scan y redirige a `/m/{public_code}/menu.pdf`, una URL pública estable que no expone storage keys ni IDs internos.
 
+## Storage actual
+
+Fase 1 Base sigue usando `LocalStorage` en backend. En `compose.yaml`, el backend persiste archivos en el volumen Docker `backend_storage` montado en `/data/storage`, por lo que PDFs, logos y QR sobreviven a reinicios del contenedor.
+
+MinIO figura en Compose, pero hoy no está integrado en el backend. Se mantiene como deuda técnica explícita; no forma parte de este cierre de Fase 1.
+
 ## Alcance excluido
 
 No incluye pedidos, pagos, reservas, WhatsApp, IA, OCR, menú digital estructurado, productos, inventario, POS, promociones, landing pages ni QR artístico automático.

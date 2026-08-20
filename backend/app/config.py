@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "MenuFlow"
     environment: str = "local"
+    app_timezone: str = "America/Argentina/Buenos_Aires"
     database_url: str = "postgresql+psycopg://menuflow:menuflow@localhost:5432/menuflow"
     secret_key: str = Field(default="change-me-local-only", min_length=16)
     access_token_minutes: int = 60 * 8

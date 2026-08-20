@@ -1,13 +1,20 @@
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
+from os import PathLike
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.permissions import require_membership, require_platform_admin
+from app.auth.permissions import (
+    require_membership,
+    require_operable_business,
+    require_platform_admin,
+)
 from app.auth.security import create_access_token, get_current_user, hash_password, verify_password
 from app.config import get_settings
 from app.db import get_db
@@ -43,7 +50,7 @@ from app.storage.local import LocalStorage
 
 router = APIRouter()
 _login_attempts: dict[str, deque[datetime]] = defaultdict(deque)
-LOGO_TYPES = {"image/png": ".png", "image/jpeg": ".jpg"}
+LOGO_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
 
 
 @router.get("/health")
@@ -79,7 +86,7 @@ def my_businesses(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[Business]:
     if user.is_platform_admin:
-        return list(db.scalars(select(Business).order_by(Business.name)).all())
+        return _list_all_businesses(db)
     return list(
         db.scalars(
             select(Business)
@@ -115,6 +122,8 @@ def patch_business(
     data = payload.model_dump(exclude_unset=True)
     if not user.is_platform_admin:
         data.pop("status", None)
+        if data:
+            business = require_operable_business(db, user, business_id)
     for key, value in data.items():
         setattr(business, key, value)
     business.updated_at = datetime.now(UTC)
@@ -130,18 +139,20 @@ async def upload_logo(
     user: User = Depends(get_current_user),
 ) -> Business:
     require_membership(db, user, business_id, {MembershipRole.owner})
-    business = db.get(Business, business_id)
-    if business is None:
-        raise HTTPException(status_code=404, detail="Business not found")
+    business = require_operable_business(db, user, business_id)
     suffix = LOGO_TYPES.get(file.content_type or "")
     if suffix is None:
         raise HTTPException(status_code=400, detail="Only PNG or JPEG logos are allowed")
     storage = LocalStorage()
     key = storage.logo_key(business_id, suffix)
     size = await storage.save_upload(file, key)
+    if size == 0:
+        storage.open(key).unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Logo file is empty")
     if size > 2 * 1024 * 1024:
         storage.open(key).unlink(missing_ok=True)
         raise HTTPException(status_code=413, detail="Logo too large")
+    _delete_existing_logo_files(business_id, keep=storage.open(key))
     business.logo_url = f"/logos/{business.id}"
     business.updated_at = datetime.now(UTC)
     db.commit()
@@ -156,7 +167,7 @@ def public_logo(business_id: str, db: Session = Depends(get_db)) -> FileResponse
     root = Path(get_settings().storage_path) / "businesses" / business_id / "logo"
     for candidate in root.glob("logo.*"):
         if candidate.suffix.lower() in {".png", ".jpg", ".jpeg"}:
-            return FileResponse(candidate)
+            return FileResponse(candidate, headers={"Cache-Control": "no-store"})
     raise HTTPException(status_code=404, detail="Not found")
 
 
@@ -186,8 +197,7 @@ async def replace_menu(
     user: User = Depends(get_current_user),
 ) -> MenuStateOut:
     require_membership(db, user, business_id, {MembershipRole.owner, MembershipRole.manager})
-    if db.get(Business, business_id) is None:
-        raise HTTPException(status_code=404, detail="Business not found")
+    require_operable_business(db, user, business_id)
     await upload_menu_pdf(db, business_id, user, file)
     db.commit()
     return menu_state(business_id, db, user)
@@ -201,6 +211,7 @@ def rollback(
     user: User = Depends(get_current_user),
 ) -> MenuStateOut:
     require_membership(db, user, business_id, {MembershipRole.owner})
+    require_operable_business(db, user, business_id)
     rollback_menu(db, business_id, payload.menu_asset_id)
     db.commit()
     return menu_state(business_id, db, user)
@@ -219,6 +230,7 @@ def generate_qr(
     business_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[QRCode]:
     require_membership(db, user, business_id, {MembershipRole.owner, MembershipRole.manager})
+    require_operable_business(db, user, business_id)
     created = generate_qr_assets(db, business_id)
     db.commit()
     return created
@@ -237,7 +249,7 @@ def download_qr(
     path = Path(get_settings().storage_path) / "qr" / business_id / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="QR not found")
-    return FileResponse(path)
+    return FileResponse(path, headers=_dynamic_public_cache_headers())
 
 
 @router.get("/api/businesses/{business_id}/analytics/summary", response_model=AnalyticsSummaryOut)
@@ -281,13 +293,18 @@ def public_redirect(
         raise HTTPException(status_code=404, detail="Not found")
     record_scan(db, link.id, link.business_id, user_agent)
     db.commit()
-    return RedirectResponse(url=f"/m/{public_code}/menu.pdf", status_code=302)
+    return RedirectResponse(
+        url=_public_menu_url(public_code, link.destination_id),
+        status_code=302,
+        headers=_dynamic_public_cache_headers(),
+    )
 
 
 @router.get("/m/{public_code}/menu.pdf", response_model=None)
 def public_menu_file(
-    public_code: str, db: Session = Depends(get_db)
+    public_code: str, v: str | None = None, db: Session = Depends(get_db)
 ) -> FileResponse | PlainTextResponse:
+    del v
     link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
     if link is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -307,7 +324,15 @@ def public_menu_file(
         path = LocalStorage().open(asset.storage_key)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Not found") from exc
-    return FileResponse(path, media_type="application/pdf", filename=asset.original_filename)
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        headers={
+            **_dynamic_public_cache_headers(),
+            "Content-Type": "application/pdf",
+            "Content-Disposition": _inline_content_disposition(asset.original_filename),
+        },
+    )
 
 
 @router.get("/admin/businesses", response_model=list[BusinessOut])
@@ -315,7 +340,7 @@ def admin_businesses(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[Business]:
     require_platform_admin(user)
-    return list(db.scalars(select(Business).order_by(Business.name)).all())
+    return _list_all_businesses(db)
 
 
 @router.post("/admin/businesses", response_model=BusinessOut)
@@ -325,7 +350,13 @@ def admin_create_business(
     require_platform_admin(user)
     business = Business(**payload.model_dump())
     db.add(business)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "slug" in str(exc).lower():
+            raise HTTPException(status_code=400, detail="Slug already exists") from exc
+        raise
     return business
 
 
@@ -382,3 +413,32 @@ def _check_login_rate(email: str) -> None:
     if len(bucket) >= settings.login_rate_limit_per_minute:
         raise HTTPException(status_code=429, detail="Too many login attempts")
     bucket.append(now)
+
+
+def _delete_existing_logo_files(business_id: str, keep: Path | None = None) -> None:
+    root = Path(get_settings().storage_path) / "businesses" / business_id / "logo"
+    for candidate in root.glob("logo.*"):
+        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg"} and candidate != keep:
+            candidate.unlink(missing_ok=True)
+
+
+def _inline_content_disposition(filename: str | PathLike[str]) -> str:
+    safe_name = Path(filename).name or "menu.pdf"
+    encoded = quote(safe_name)
+    return f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{encoded}"
+
+
+def _dynamic_public_cache_headers() -> dict[str, str]:
+    return {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
+
+def _public_menu_url(public_code: str, destination_id: str) -> str:
+    return f"/m/{public_code}/menu.pdf?{urlencode({'v': destination_id})}"
+
+
+def _list_all_businesses(db: Session) -> list[Business]:
+    return list(db.scalars(select(Business).order_by(Business.name, Business.id)).all())

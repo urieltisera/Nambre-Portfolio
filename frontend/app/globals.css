@@ -96,6 +96,35 @@ select {
   padding: 14px;
 }
 
+.admin-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-businesses-panel,
+.admin-create-panel {
+  min-height: 0;
+}
+
+.admin-business-list {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.business-admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.suspended-panel {
+  border-color: #d8b2b2;
+  background: #fff7f7;
+  margin-bottom: 16px;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -121,6 +150,31 @@ select {
   color: var(--danger);
 }
 
+.asset-preview {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcfb;
+  padding: 12px;
+}
+
+.asset-preview img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.logo-preview {
+  max-height: 96px;
+  object-fit: contain;
+}
+
+.qr-preview img {
+  width: 220px;
+}
+
 .login {
   min-height: 100vh;
   display: grid;
@@ -137,8 +191,18 @@ select {
     padding: 24px;
   }
 
+  .admin-layout {
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+    align-items: start;
+  }
+
+  .admin-business-list {
+    max-height: 65vh;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
   .grid.two {
     grid-template-columns: 1fr 1fr;
   }
 }
-

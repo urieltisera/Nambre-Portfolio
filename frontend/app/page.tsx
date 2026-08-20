@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import {useState} from "react";
 import {AdminPanel} from "@/components/AdminPanel";
 import {BusinessPanel} from "@/components/BusinessPanel";
@@ -37,7 +38,11 @@ export default function Page() {
         <button className={!admin ? "active" : "secondary"} onClick={() => setAdmin(false)}>Negocio</button>
         {canAdmin ? <button className={admin ? "active" : "secondary"} onClick={() => setAdmin(true)}>Admin</button> : null}
       </div>
-      {admin && canAdmin ? <main className="shell"><AdminPanel token={token} /></main> : <BusinessPanel token={token} />}
+      {admin && canAdmin ? (
+        <main className="shell"><AdminPanel token={token} /></main>
+      ) : (
+        <BusinessPanel isPlatformAdmin={canAdmin} token={token} />
+      )}
     </>
   );
 }

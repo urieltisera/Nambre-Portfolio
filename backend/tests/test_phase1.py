@@ -1,17 +1,28 @@
 from base64 import b64decode
+from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
+from typing import cast
+from urllib.parse import parse_qs, urlparse
+from xml.etree import ElementTree as ET
+from zoneinfo import ZoneInfo
 
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Business,
     BusinessStatus,
+    DestinationType,
     DynamicLink,
     MembershipRole,
     MenuAsset,
     MenuAssetStatus,
+    QRCode,
     ScanEvent,
 )
+from app.services import analytics_service
 from app.services.qr_service import qr_payload
 from tests.conftest import add_membership, auth_headers, make_business, make_user
 
@@ -24,6 +35,86 @@ PNG_LOGO = b64decode(
 
 def pdf_file(content: bytes, name: str = "menu.pdf") -> tuple[str, tuple[str, BytesIO, str]]:
     return ("file", (name, BytesIO(content), "application/pdf"))
+
+
+def png_logo_bytes(color: tuple[int, int, int, int] = (255, 0, 0, 255)) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGBA", (8, 8), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def assert_dynamic_menu_cache_headers(response) -> None:
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["expires"] == "0"
+
+
+def assert_menu_redirect_location(location: str, public_code: str, expected_asset_id: str) -> None:
+    parsed = urlparse(location)
+    assert parsed.path == f"/m/{public_code}/menu.pdf"
+    assert parse_qs(parsed.query) == {"v": [expected_asset_id]}
+
+
+def image_center_pixel(png_bytes: bytes) -> tuple[int, int, int, int]:
+    with Image.open(BytesIO(png_bytes)) as image:
+        rgba = image.convert("RGBA")
+        return cast(tuple[int, int, int, int], rgba.getpixel((rgba.width // 2, rgba.height // 2)))
+
+
+def svg_embedded_logo_bytes(svg: str) -> bytes:
+    root = ET.fromstring(svg)
+    image = root.find("{http://www.w3.org/2000/svg}image")
+    assert image is not None
+    href = image.attrib.get("href") or image.attrib.get("{http://www.w3.org/1999/xlink}href")
+    assert href is not None
+    prefix = "data:image/png;base64,"
+    assert href.startswith(prefix)
+    return b64decode(href[len(prefix) :])
+
+
+def qr_record_signature(records: list[QRCode]) -> set[tuple[str, str, str, str]]:
+    return {
+        (
+            item.id,
+            item.qr_type.value,
+            Path(item.asset_url).suffix,
+            item.asset_url,
+        )
+        for item in records
+    }
+
+
+def create_dynamic_link(
+    db: Session, business_id: str, destination_id: str = "menu-asset"
+) -> DynamicLink:
+    link = DynamicLink(
+        business_id=business_id,
+        public_code=f"code-{business_id[:8]}",
+        destination_type=DestinationType.menu_pdf,
+        destination_id=destination_id,
+        is_active=True,
+    )
+    db.add(link)
+    db.commit()
+    return link
+
+
+def create_scan(
+    db: Session,
+    dynamic_link_id: str,
+    business_id: str,
+    scanned_at: datetime,
+    user_agent_category: str | None = "mobile",
+) -> ScanEvent:
+    event = ScanEvent(
+        dynamic_link_id=dynamic_link_id,
+        business_id=business_id,
+        scanned_at=scanned_at.astimezone(UTC),
+        user_agent_category=user_agent_category,
+    )
+    db.add(event)
+    db.commit()
+    return event
 
 
 def test_inactive_user_cannot_login(client, db: Session) -> None:
@@ -112,8 +203,13 @@ def test_dynamic_link_redirect_suspension_and_stable_code(client, db: Session) -
     code = link.public_code
     response = client.get(f"/r/{code}", headers={"User-Agent": "Mobile Safari"})
     assert response.status_code == 302
-    assert response.headers["location"] == f"/m/{code}/menu.pdf"
-    assert client.get(f"/m/{code}/menu.pdf").status_code == 200
+    assert_menu_redirect_location(response.headers["location"], code, link.destination_id)
+    assert_dynamic_menu_cache_headers(response)
+    menu_response = client.get(response.headers["location"])
+    assert menu_response.status_code == 200
+    assert menu_response.headers["content-type"].startswith("application/pdf")
+    assert menu_response.headers["content-disposition"].startswith("inline;")
+    assert_dynamic_menu_cache_headers(menu_response)
     assert db.scalar(select(ScanEvent).where(ScanEvent.business_id == business.id)) is not None
 
     client.post(
@@ -142,6 +238,11 @@ def test_qr_payload_and_analytics_tenant_isolation(client, db: Session) -> None:
     add_membership(db, owner, business, MembershipRole.owner)
     add_membership(db, other_owner, other, MembershipRole.owner)
     client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_logo_bytes()), "image/png")},
+    )
+    client.post(
         f"/api/businesses/{business.id}/menu/replace",
         headers=auth_headers(owner),
         files=[pdf_file(PDF_V1, "v1.pdf")],
@@ -159,6 +260,28 @@ def test_qr_payload_and_analytics_tenant_isolation(client, db: Session) -> None:
         download = client.get(item["asset_url"], headers=auth_headers(owner))
         assert download.status_code == 200
         assert download.content
+        assert_dynamic_menu_cache_headers(download)
+    payloads = generated.json()
+    branded_svg = next(
+        item
+        for item in payloads
+        if item["qr_type"] == "branded" and item["asset_url"].endswith(".svg")
+    )
+    branded_png = next(
+        item
+        for item in payloads
+        if item["qr_type"] == "branded" and item["asset_url"].endswith(".png")
+    )
+    standard_png = next(
+        item
+        for item in payloads
+        if item["qr_type"] == "standard" and item["asset_url"].endswith(".png")
+    )
+    branded_svg_response = client.get(branded_svg["asset_url"], headers=auth_headers(owner))
+    assert "data:image/png;base64" in branded_svg_response.text
+    branded_png_response = client.get(branded_png["asset_url"], headers=auth_headers(owner))
+    standard_png_response = client.get(standard_png["asset_url"], headers=auth_headers(owner))
+    assert branded_png_response.content != standard_png_response.content
 
     client.get(f"/r/{link.public_code}")
     client.get(f"/r/{link.public_code}")
@@ -170,6 +293,225 @@ def test_qr_payload_and_analytics_tenant_isolation(client, db: Session) -> None:
         f"/api/businesses/{other.id}/analytics/summary", headers=auth_headers(other_owner)
     )
     assert other_summary.json()["scans_today"] == 0
+
+
+def test_analytics_uses_local_day_boundaries_for_today_and_daily_series(
+    db: Session, monkeypatch
+) -> None:
+    owner = make_user(db, "owner-analytics-boundary@example.com")
+    business = make_business(db, "Analytics Boundary", "analytics-boundary")
+    add_membership(db, owner, business, MembershipRole.owner)
+    link = create_dynamic_link(db, business.id)
+    argentina = ZoneInfo("America/Argentina/Buenos_Aires")
+
+    create_scan(db, link.id, business.id, datetime(2026, 8, 19, 23, 59, tzinfo=argentina))
+    create_scan(db, link.id, business.id, datetime(2026, 8, 20, 0, 1, tzinfo=argentina))
+
+    monkeypatch.setattr(
+        analytics_service,
+        "_now_utc",
+        lambda: datetime(2026, 8, 20, 0, 5, tzinfo=argentina).astimezone(UTC),
+    )
+
+    summary = analytics_service.summary(db, business.id)
+    series = analytics_service.daily_series(db, business.id, "7d")
+    by_date = {item["date"]: item["scans"] for item in series}
+
+    assert summary["scans_today"] == 1
+    assert summary["scans_7d"] == 2
+    assert summary["scans_30d"] == 2
+    assert by_date["2026-08-19"] == 1
+    assert by_date["2026-08-20"] == 1
+    assert sum(cast(int, item["scans"]) for item in series) == 2
+
+
+def test_analytics_groups_utc_boundary_scans_by_local_day_and_local_hour(
+    db: Session, monkeypatch
+) -> None:
+    owner = make_user(db, "owner-analytics-utc-boundary@example.com")
+    business = make_business(db, "Analytics UTC Boundary", "analytics-utc-boundary")
+    add_membership(db, owner, business, MembershipRole.owner)
+    link = create_dynamic_link(db, business.id)
+    argentina = ZoneInfo("America/Argentina/Buenos_Aires")
+
+    create_scan(db, link.id, business.id, datetime(2026, 8, 19, 21, 30, tzinfo=argentina))
+    create_scan(db, link.id, business.id, datetime(2026, 8, 19, 21, 45, tzinfo=argentina))
+    create_scan(db, link.id, business.id, datetime(2026, 8, 20, 0, 1, tzinfo=argentina))
+
+    monkeypatch.setattr(
+        analytics_service,
+        "_now_utc",
+        lambda: datetime(2026, 8, 20, 0, 5, tzinfo=argentina).astimezone(UTC),
+    )
+
+    summary = analytics_service.summary(db, business.id)
+    series = analytics_service.daily_series(db, business.id, "30d")
+    by_date = {item["date"]: item["scans"] for item in series}
+
+    assert summary["scans_today"] == 1
+    assert summary["scans_7d"] == 3
+    assert summary["scans_30d"] == 3
+    assert summary["busiest_hour"] == 21
+    assert by_date["2026-08-19"] == 2
+    assert by_date["2026-08-20"] == 1
+    assert sum(cast(int, item["scans"]) for item in series) == 3
+
+
+def test_branded_qr_uses_current_logo_after_logo_replacement(client, db: Session) -> None:
+    owner = make_user(db, "owner-qr-logo@example.com")
+    business = make_business(db, "Logo QR", "logo-qr")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu.pdf")],
+    )
+    assert menu.status_code == 200
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    public_code = link.public_code
+
+    logo_a = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_logo_bytes((255, 0, 0, 255))), "image/png")},
+    )
+    assert logo_a.status_code == 200
+
+    generated_a = client.post(
+        f"/api/businesses/{business.id}/qr/generate", headers=auth_headers(owner)
+    )
+    assert generated_a.status_code == 200
+    branded_png_a = client.get(
+        next(
+            item["asset_url"]
+            for item in generated_a.json()
+            if item["qr_type"] == "branded" and item["asset_url"].endswith(".png")
+        ),
+        headers=auth_headers(owner),
+    )
+    branded_svg_a = client.get(
+        next(
+            item["asset_url"]
+            for item in generated_a.json()
+            if item["qr_type"] == "branded" and item["asset_url"].endswith(".svg")
+        ),
+        headers=auth_headers(owner),
+    )
+    standard_png_a = client.get(
+        next(
+            item["asset_url"]
+            for item in generated_a.json()
+            if item["qr_type"] == "standard" and item["asset_url"].endswith(".png")
+        ),
+        headers=auth_headers(owner),
+    )
+    assert branded_png_a.status_code == 200
+    assert branded_svg_a.status_code == 200
+    assert standard_png_a.status_code == 200
+    assert_dynamic_menu_cache_headers(branded_png_a)
+    assert_dynamic_menu_cache_headers(branded_svg_a)
+    assert_dynamic_menu_cache_headers(standard_png_a)
+    assert (
+        image_center_pixel(branded_png_a.content)[0] > image_center_pixel(branded_png_a.content)[2]
+    )
+    embedded_a = svg_embedded_logo_bytes(branded_svg_a.text)
+    assert image_center_pixel(embedded_a)[0] > image_center_pixel(embedded_a)[2]
+
+    logo_b = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_logo_bytes((0, 0, 255, 255))), "image/png")},
+    )
+    assert logo_b.status_code == 200
+
+    generated_b = client.post(
+        f"/api/businesses/{business.id}/qr/generate", headers=auth_headers(owner)
+    )
+    assert generated_b.status_code == 200
+    db.refresh(link)
+    assert link.public_code == public_code
+
+    branded_png_b = client.get(
+        next(
+            item["asset_url"]
+            for item in generated_b.json()
+            if item["qr_type"] == "branded" and item["asset_url"].endswith(".png")
+        ),
+        headers=auth_headers(owner),
+    )
+    branded_svg_b = client.get(
+        next(
+            item["asset_url"]
+            for item in generated_b.json()
+            if item["qr_type"] == "branded" and item["asset_url"].endswith(".svg")
+        ),
+        headers=auth_headers(owner),
+    )
+    standard_png_b = client.get(
+        next(
+            item["asset_url"]
+            for item in generated_b.json()
+            if item["qr_type"] == "standard" and item["asset_url"].endswith(".png")
+        ),
+        headers=auth_headers(owner),
+    )
+    assert branded_png_b.status_code == 200
+    assert branded_svg_b.status_code == 200
+    assert standard_png_b.status_code == 200
+    assert branded_png_b.content != branded_png_a.content
+    assert branded_svg_b.text != branded_svg_a.text
+    assert standard_png_b.content == standard_png_a.content
+    assert_dynamic_menu_cache_headers(branded_png_b)
+    assert_dynamic_menu_cache_headers(branded_svg_b)
+    assert_dynamic_menu_cache_headers(standard_png_b)
+    assert (
+        image_center_pixel(branded_png_b.content)[2] > image_center_pixel(branded_png_b.content)[0]
+    )
+    embedded_b = svg_embedded_logo_bytes(branded_svg_b.text)
+    assert embedded_b != embedded_a
+    assert image_center_pixel(embedded_b)[2] > image_center_pixel(embedded_b)[0]
+
+
+def test_replacing_menu_pdf_does_not_change_logo_url(client, db: Session) -> None:
+    owner = make_user(db, "owner-logo-menu-independence@example.com")
+    business = make_business(db, "Logo Independence", "logo-independence")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    logo = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_logo_bytes((255, 0, 0, 255))), "image/png")},
+    )
+    assert logo.status_code == 200
+    assert logo.json()["logo_url"] == f"/logos/{business.id}"
+
+    first_menu = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu-v1.pdf")],
+    )
+    assert first_menu.status_code == 200
+
+    business_after_first_menu = client.get(
+        f"/api/businesses/{business.id}", headers=auth_headers(owner)
+    )
+    assert business_after_first_menu.status_code == 200
+    assert business_after_first_menu.json()["logo_url"] == f"/logos/{business.id}"
+
+    second_menu = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V2, "menu-v2.pdf")],
+    )
+    assert second_menu.status_code == 200
+
+    business_after_second_menu = client.get(
+        f"/api/businesses/{business.id}", headers=auth_headers(owner)
+    )
+    assert business_after_second_menu.status_code == 200
+    assert business_after_second_menu.json()["logo_url"] == f"/logos/{business.id}"
 
 
 def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db: Session) -> None:
@@ -187,6 +529,23 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     )
     assert logo.status_code == 200
     assert logo.json()["logo_url"] == f"/logos/{business_a.id}"
+    public_logo = client.get(f"/logos/{business_a.id}")
+    assert public_logo.status_code == 200
+    assert public_logo.headers["cache-control"] == "no-store"
+
+    logo_replace = client.post(
+        f"/api/businesses/{business_a.id}/logo",
+        headers=auth_headers(owner_a),
+        files={"file": ("logo.jpg", BytesIO(png_logo_bytes()), "image/jpg")},
+    )
+    assert logo_replace.status_code == 200
+    logo_dir = Path.cwd() / "storage" / "businesses" / business_a.id / "logo"
+    if not logo_dir.exists():
+        from app.config import get_settings
+
+        logo_dir = Path(get_settings().storage_path) / "businesses" / business_a.id / "logo"
+    stored = sorted(item.name for item in logo_dir.glob("logo.*"))
+    assert stored == ["logo.jpg"]
 
     v1 = client.post(
         f"/api/businesses/{business_a.id}/menu/replace",
@@ -203,8 +562,9 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business_a.id))
     assert link is not None
     code = link.public_code
-    assert client.get(f"/r/{code}").headers["location"] == f"/m/{code}/menu.pdf"
-    assert b"%v1" in client.get(f"/m/{code}/menu.pdf").content
+    first_redirect = client.get(f"/r/{code}")
+    assert_menu_redirect_location(first_redirect.headers["location"], code, link.destination_id)
+    assert b"%v1" in client.get(first_redirect.headers["location"]).content
 
     forbidden = client.post(
         f"/api/businesses/{business_b.id}/menu/replace",
@@ -222,8 +582,10 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     assert v2.status_code == 200
     db.expire(link)
     assert link.public_code == code
-    assert client.get(f"/r/{code}").status_code == 302
-    assert b"%v2" in client.get(f"/m/{code}/menu.pdf").content
+    second_redirect = client.get(f"/r/{code}")
+    assert second_redirect.status_code == 302
+    assert_menu_redirect_location(second_redirect.headers["location"], code, link.destination_id)
+    assert b"%v2" in client.get(second_redirect.headers["location"]).content
 
     analytics = client.get(
         f"/api/businesses/{business_a.id}/analytics/summary", headers=auth_headers(owner_a)
@@ -240,5 +602,345 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     )
     db.expire(link)
     assert link.public_code == code
-    assert client.get(f"/r/{code}").status_code == 302
-    assert b"%v1" in client.get(f"/m/{code}/menu.pdf").content
+    rollback_redirect = client.get(f"/r/{code}")
+    assert rollback_redirect.status_code == 302
+    assert_menu_redirect_location(rollback_redirect.headers["location"], code, link.destination_id)
+    assert b"%v1" in client.get(rollback_redirect.headers["location"]).content
+
+
+def test_public_menu_url_serves_current_asset_with_no_store_headers(client, db: Session) -> None:
+    owner = make_user(db, "owner-public-menu@example.com")
+    business = make_business(db, "Bar Public", "bar-public")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    first = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu-v1.pdf")],
+    )
+    assert first.status_code == 200
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    code = link.public_code
+    first_asset_id = link.destination_id
+
+    redirect_v1 = client.get(f"/r/{code}")
+    assert redirect_v1.status_code == 302
+    assert_menu_redirect_location(redirect_v1.headers["location"], code, first_asset_id)
+    assert_dynamic_menu_cache_headers(redirect_v1)
+    menu_v1 = client.get(redirect_v1.headers["location"])
+    assert menu_v1.status_code == 200
+    assert menu_v1.content == PDF_V1
+    assert menu_v1.headers["content-type"].startswith("application/pdf")
+    assert menu_v1.headers["content-disposition"].startswith("inline;")
+    assert_dynamic_menu_cache_headers(menu_v1)
+
+    second = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V2, "menu-v2.pdf")],
+    )
+    assert second.status_code == 200
+    db.refresh(link)
+    assert link.public_code == code
+    second_asset_id = link.destination_id
+    assert second_asset_id != first_asset_id
+
+    redirect_v2 = client.get(f"/r/{code}")
+    assert redirect_v2.status_code == 302
+    assert redirect_v2.headers["location"] != redirect_v1.headers["location"]
+    assert_menu_redirect_location(redirect_v2.headers["location"], code, second_asset_id)
+    menu_v2 = client.get(redirect_v2.headers["location"])
+    assert menu_v2.status_code == 200
+    assert menu_v2.content == PDF_V2
+    assert_dynamic_menu_cache_headers(menu_v2)
+
+    stale_cache_buster = client.get(f"/m/{code}/menu.pdf?v={first_asset_id}")
+    assert stale_cache_buster.status_code == 200
+    assert stale_cache_buster.content == PDF_V2
+    assert_dynamic_menu_cache_headers(stale_cache_buster)
+
+    arbitrary_cache_buster = client.get(f"/m/{code}/menu.pdf?v=foo")
+    assert arbitrary_cache_buster.status_code == 200
+    assert arbitrary_cache_buster.content == PDF_V2
+    assert_dynamic_menu_cache_headers(arbitrary_cache_buster)
+
+    rollback = client.post(
+        f"/api/businesses/{business.id}/menu/rollback",
+        headers=auth_headers(owner),
+        json={"menu_asset_id": first_asset_id},
+    )
+    assert rollback.status_code == 200
+    db.refresh(link)
+    assert link.public_code == code
+    assert link.destination_id == first_asset_id
+
+    redirect_v1_again = client.get(f"/r/{code}")
+    assert redirect_v1_again.status_code == 302
+    assert redirect_v1_again.headers["location"] != redirect_v2.headers["location"]
+    assert_menu_redirect_location(redirect_v1_again.headers["location"], code, first_asset_id)
+    menu_v1_again = client.get(redirect_v1_again.headers["location"])
+    assert menu_v1_again.status_code == 200
+    assert menu_v1_again.content == PDF_V1
+    assert_dynamic_menu_cache_headers(menu_v1_again)
+
+
+def test_platform_admin_access_and_owner_forbidden(client, db: Session) -> None:
+    admin = make_user(db, "admin@example.com", admin=True)
+    owner = make_user(db, "owner-admin-test@example.com")
+    business = make_business(db, "Admin Biz", "admin-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    me_admin = client.get("/api/me", headers=auth_headers(admin))
+    assert me_admin.status_code == 200
+    assert me_admin.json()["is_platform_admin"] is True
+
+    me_owner = client.get("/api/me", headers=auth_headers(owner))
+    assert me_owner.status_code == 200
+    assert me_owner.json()["is_platform_admin"] is False
+
+    listing = client.get("/admin/businesses", headers=auth_headers(admin))
+    assert listing.status_code == 200
+    assert any(item["id"] == business.id for item in listing.json())
+
+    created = client.post(
+        "/admin/businesses",
+        headers=auth_headers(admin),
+        json={"name": "Nuevo Negocio", "slug": "nuevo-negocio", "status": "active"},
+    )
+    assert created.status_code == 200
+    created_id = created.json()["id"]
+
+    assigned = client.post(
+        f"/admin/businesses/{created_id}/owner",
+        headers=auth_headers(admin),
+        json={"email": "nuevo-owner@example.com", "password": "owner12345", "role": "owner"},
+    )
+    assert assigned.status_code == 200
+
+    suspended = client.patch(
+        f"/admin/businesses/{created_id}",
+        headers=auth_headers(admin),
+        json={"status": "suspended"},
+    )
+    assert suspended.status_code == 200
+    assert suspended.json()["status"] == "suspended"
+
+    assert client.get("/admin/businesses", headers=auth_headers(owner)).status_code == 403
+    assert (
+        client.post(
+            "/admin/businesses",
+            headers=auth_headers(owner),
+            json={"name": "x", "slug": "x", "status": "active"},
+        ).status_code
+        == 403
+    )
+
+
+def test_platform_admin_lists_all_statuses_and_preserves_assets_when_switching_status(
+    client, db: Session
+) -> None:
+    admin = make_user(db, "admin-list@example.com", admin=True)
+    owner = make_user(db, "owner-status@example.com")
+    active = make_business(db, "Activo", "activo", BusinessStatus.active)
+    demo = make_business(db, "Demo", "demo", BusinessStatus.demo)
+    suspended = make_business(db, "Suspendido", "suspendido", BusinessStatus.suspended)
+    add_membership(db, owner, demo, MembershipRole.owner)
+
+    upload = client.post(
+        f"/api/businesses/{demo.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "demo.pdf")],
+    )
+    assert upload.status_code == 200
+    generated = client.post(f"/api/businesses/{demo.id}/qr/generate", headers=auth_headers(owner))
+    assert generated.status_code == 200
+
+    listing = client.get("/admin/businesses", headers=auth_headers(admin))
+    assert listing.status_code == 200
+    assert [(item["name"], item["status"]) for item in listing.json()] == [
+        ("Activo", "active"),
+        ("Demo", "demo"),
+        ("Suspendido", "suspended"),
+    ]
+
+    my_businesses = client.get("/api/me/businesses", headers=auth_headers(admin))
+    assert my_businesses.status_code == 200
+    assert {item["id"] for item in my_businesses.json()} == {active.id, demo.id, suspended.id}
+
+    link_before = db.scalar(select(DynamicLink).where(DynamicLink.business_id == demo.id))
+    qr_before = db.scalars(select(QRCode).where(QRCode.business_id == demo.id)).all()
+    assert link_before is not None
+    public_code = link_before.public_code
+    destination_id = link_before.destination_id
+    qr_before_signature = qr_record_signature(qr_before)
+    assert {(qr_type, ext) for _, qr_type, ext, _ in qr_before_signature} == {
+        ("standard", ".png"),
+        ("standard", ".svg"),
+        ("branded", ".png"),
+        ("branded", ".svg"),
+    }
+
+    for next_status in ("active", "suspended", "active"):
+        response = client.patch(
+            f"/admin/businesses/{demo.id}",
+            headers=auth_headers(admin),
+            json={"status": next_status},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == next_status
+
+    db.expire_all()
+    persisted = db.get(Business, demo.id)
+    assert persisted is not None
+    assert persisted.status == BusinessStatus.active
+    link_after = db.scalar(select(DynamicLink).where(DynamicLink.business_id == demo.id))
+    qr_after = db.scalars(select(QRCode).where(QRCode.business_id == demo.id)).all()
+    assert link_after is not None
+    assert link_after.public_code == public_code
+    assert link_after.destination_id == destination_id
+    assert len(qr_after) == len(qr_before)
+    assert qr_record_signature(qr_after) == qr_before_signature
+
+
+def test_owner_cannot_change_business_status_through_non_admin_endpoints(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "owner-no-status@example.com")
+    business = make_business(db, "Owner Biz", "owner-biz", BusinessStatus.demo)
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    response = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={"status": "active"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "demo"
+
+    assert (
+        client.patch(
+            f"/admin/businesses/{business.id}",
+            headers=auth_headers(owner),
+            json={"status": "active"},
+        ).status_code
+        == 403
+    )
+
+
+def test_suspended_business_blocks_owner_mutations_and_recovers_after_reactivation(
+    client, db: Session
+) -> None:
+    admin = make_user(db, "admin-suspended@example.com", admin=True)
+    owner = make_user(db, "owner-suspended@example.com")
+    business = make_business(db, "Suspension Flow", "suspension-flow", BusinessStatus.active)
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    upload = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu-v1.pdf")],
+    )
+    assert upload.status_code == 200
+    logo = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_logo_bytes()), "image/png")},
+    )
+    assert logo.status_code == 200
+    qr_generation = client.post(
+        f"/api/businesses/{business.id}/qr/generate",
+        headers=auth_headers(owner),
+    )
+    assert qr_generation.status_code == 200
+
+    link_before = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    qr_before = db.scalars(select(QRCode).where(QRCode.business_id == business.id)).all()
+    archived_menu = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V2, "menu-v2.pdf")],
+    )
+    assert archived_menu.status_code == 200
+    menu_assets = db.scalars(
+        select(MenuAsset).where(MenuAsset.business_id == business.id).order_by(MenuAsset.version)
+    ).all()
+    archived_asset = next(
+        asset for asset in menu_assets if asset.status == MenuAssetStatus.archived
+    )
+    assert link_before is not None
+    original_public_code = link_before.public_code
+    qr_before_signature = qr_record_signature(qr_before)
+    assert {(qr_type, ext) for _, qr_type, ext, _ in qr_before_signature} == {
+        ("standard", ".png"),
+        ("standard", ".svg"),
+        ("branded", ".png"),
+        ("branded", ".svg"),
+    }
+
+    suspended = client.patch(
+        f"/admin/businesses/{business.id}",
+        headers=auth_headers(admin),
+        json={"status": "suspended"},
+    )
+    assert suspended.status_code == 200
+
+    blocked_logo = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_logo_bytes((0, 0, 255, 255))), "image/png")},
+    )
+    assert blocked_logo.status_code == 403
+    assert blocked_logo.json()["detail"] == "Business is suspended"
+
+    blocked_replace = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "blocked.pdf")],
+    )
+    assert blocked_replace.status_code == 403
+    assert blocked_replace.json()["detail"] == "Business is suspended"
+
+    blocked_rollback = client.post(
+        f"/api/businesses/{business.id}/menu/rollback",
+        headers=auth_headers(owner),
+        json={"menu_asset_id": archived_asset.id},
+    )
+    assert blocked_rollback.status_code == 403
+    assert blocked_rollback.json()["detail"] == "Business is suspended"
+
+    blocked_qr = client.post(
+        f"/api/businesses/{business.id}/qr/generate",
+        headers=auth_headers(owner),
+    )
+    assert blocked_qr.status_code == 403
+    assert blocked_qr.json()["detail"] == "Business is suspended"
+
+    safe_redirect = client.get(f"/r/{original_public_code}")
+    assert safe_redirect.status_code == 403
+    safe_pdf = client.get(f"/m/{original_public_code}/menu.pdf")
+    assert safe_pdf.status_code == 403
+
+    reactivated = client.patch(
+        f"/admin/businesses/{business.id}",
+        headers=auth_headers(admin),
+        json={"status": "active"},
+    )
+    assert reactivated.status_code == 200
+
+    redirect_after = client.get(f"/r/{original_public_code}")
+    assert redirect_after.status_code == 302
+    db.expire_all()
+    link_after = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    qr_after = db.scalars(select(QRCode).where(QRCode.business_id == business.id)).all()
+    assert link_after is not None
+    assert link_after.public_code == original_public_code
+    assert len(qr_after) == len(qr_before)
+    assert qr_record_signature(qr_after) == qr_before_signature
+
+    recovered_replace = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu-v3.pdf")],
+    )
+    assert recovered_replace.status_code == 200

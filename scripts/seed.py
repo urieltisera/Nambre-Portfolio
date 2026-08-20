@@ -1,8 +1,7 @@
-from sqlalchemy import select
-
 from app.auth.security import hash_password
 from app.db import SessionLocal
 from app.models import Business, BusinessStatus, Membership, MembershipRole, User
+from sqlalchemy import select
 
 
 def main() -> None:
@@ -25,11 +24,21 @@ def main() -> None:
             db.add(owner)
         business = db.scalar(select(Business).where(Business.slug == "bar-central"))
         if business is None:
-            business = Business(name="Bar Central", slug="bar-central", status=BusinessStatus.active)
+            business = Business(
+                name="Bar Central", slug="bar-central", status=BusinessStatus.active
+            )
             db.add(business)
             db.flush()
-        if not db.scalar(select(Membership).where(Membership.user_id == owner.id, Membership.business_id == business.id)):
-            db.add(Membership(user_id=owner.id, business_id=business.id, role=MembershipRole.owner))
+        if not db.scalar(
+            select(Membership).where(
+                Membership.user_id == owner.id, Membership.business_id == business.id
+            )
+        ):
+            db.add(
+                Membership(
+                    user_id=owner.id, business_id=business.id, role=MembershipRole.owner
+                )
+            )
         db.commit()
         print("Seed listo: admin@example.com/admin12345 y owner@example.com/owner12345")
     finally:
@@ -38,4 +47,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

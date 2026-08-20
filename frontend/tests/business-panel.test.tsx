@@ -1,0 +1,496 @@
+// @vitest-environment jsdom
+
+import React from "react";
+import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
+import {afterEach, describe, expect, it, vi} from "vitest";
+import {BusinessPanel} from "../components/BusinessPanel";
+import type {Business, MenuState} from "../lib/api";
+
+const mocks = vi.hoisted(() => ({
+  downloadQrAsset: vi.fn(async () => undefined),
+  fetchQrAssetBlob: vi.fn(async () => new Blob(["qr"])),
+  listBusinesses: vi.fn(),
+  request: vi.fn(),
+}));
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    downloadQrAsset: mocks.downloadQrAsset,
+    fetchQrAssetBlob: mocks.fetchQrAssetBlob,
+    listBusinesses: mocks.listBusinesses,
+    request: mocks.request,
+  };
+});
+
+afterEach(() => {
+  cleanup();
+  mocks.downloadQrAsset.mockClear();
+  mocks.fetchQrAssetBlob.mockClear();
+  mocks.listBusinesses.mockReset();
+  mocks.request.mockReset();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("BusinessPanel logo flow", () => {
+  it("refreshes the branded preview after regenerating QR for a new logo without touching the PDF", async () => {
+    const businessWithoutLogo: Business = {
+      id: "biz-1",
+      logo_url: null,
+      name: "Demo Biz",
+      slug: "demo-biz",
+      status: "active" as const,
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+    const businessWithLogoA: Business = {
+      ...businessWithoutLogo,
+      logo_url: "/logos/biz-1",
+      updated_at: "2026-08-20T12:05:00Z",
+    };
+    const businessWithLogoB: Business = {
+      ...businessWithoutLogo,
+      logo_url: "/logos/biz-1",
+      updated_at: "2026-08-20T12:10:00Z",
+    };
+    const menuState = {
+      current: {
+        created_at: "2026-08-20T11:55:00Z",
+        file_size: 128,
+        id: "menu-1",
+        original_filename: "menu.pdf",
+        status: "active" as const,
+        version: 1,
+      },
+      public_code: "demo-code",
+      versions: [
+        {
+          created_at: "2026-08-20T11:55:00Z",
+          file_size: 128,
+          id: "menu-1",
+          original_filename: "menu.pdf",
+          status: "active" as const,
+          version: 1,
+        },
+      ],
+    };
+    const qrAssets = [
+      {
+        asset_url: "/api/businesses/biz-1/qr-assets/standard.png",
+        id: "standard-png",
+        qr_type: "standard" as const,
+        status: "approved",
+      },
+      {
+        asset_url: "/api/businesses/biz-1/qr-assets/standard.svg",
+        id: "standard-svg",
+        qr_type: "standard" as const,
+        status: "approved",
+      },
+      {
+        asset_url: "/api/businesses/biz-1/qr-assets/branded.png",
+        id: "branded-png",
+        qr_type: "branded" as const,
+        status: "approved",
+      },
+      {
+        asset_url: "/api/businesses/biz-1/qr-assets/branded.svg",
+        id: "branded-svg",
+        qr_type: "branded" as const,
+        status: "approved",
+      },
+    ];
+    const previewBlobs = [new Blob(["standard-a"]), new Blob(["branded-a"]), new Blob(["standard-b"]), new Blob(["branded-b"])];
+
+    let currentBusiness: Business = businessWithoutLogo;
+    let currentQr: typeof qrAssets = [];
+    let logoUploads = 0;
+    let qrGenerations = 0;
+
+    mocks.listBusinesses.mockImplementation(async () => [currentBusiness]);
+    mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
+      if (path === "/api/businesses/biz-1") return currentBusiness;
+      if (path === "/api/businesses/biz-1/menu") return menuState;
+      if (path === "/api/businesses/biz-1/analytics/summary") {
+        return {busiest_hour: 12, scans_30d: 30, scans_7d: 7, scans_today: 1};
+      }
+      if (path === "/api/businesses/biz-1/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-1/qr") return currentQr;
+      if (path === "/api/businesses/biz-1/logo" && init?.method === "POST") {
+        logoUploads += 1;
+        currentBusiness = logoUploads === 1 ? businessWithLogoA : businessWithLogoB;
+        return currentBusiness;
+      }
+      if (path === "/api/businesses/biz-1/qr/generate" && init?.method === "POST") {
+        qrGenerations += 1;
+        currentQr = qrAssets;
+        return qrAssets;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    const createObjectURL = vi
+      .fn()
+      .mockReturnValueOnce("blob:standard-preview-a")
+      .mockReturnValueOnce("blob:branded-preview-a")
+      .mockReturnValueOnce("blob:standard-preview-b")
+      .mockReturnValueOnce("blob:branded-preview-b");
+    const revokeObjectURL = vi.fn();
+    mocks.fetchQrAssetBlob
+      .mockResolvedValueOnce(previewBlobs[0])
+      .mockResolvedValueOnce(previewBlobs[1])
+      .mockResolvedValueOnce(previewBlobs[2])
+      .mockResolvedValueOnce(previewBlobs[3]);
+    vi.stubGlobal("URL", {createObjectURL, revokeObjectURL});
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    const {container} = render(<BusinessPanel token="owner-token" />);
+
+    await screen.findByText("DEMO BIZ");
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+
+    const [logoInput] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+    fireEvent.change(logoInput, {
+      target: {files: [new File(["logo-a"], "logo-a.png", {type: "image/png"})]},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo"}));
+
+    await screen.findByText("Logo guardado correctamente.");
+    await waitFor(() => {
+      const image = screen.getByAltText("Logo de Demo Biz");
+      expect(image.getAttribute("src")).toContain(encodeURIComponent(businessWithLogoA.updated_at!));
+    });
+
+    fireEvent.change(logoInput, {
+      target: {files: [new File(["logo-b"], "logo-b.png", {type: "image/png"})]},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo"}));
+
+    await waitFor(() => {
+      const image = screen.getByAltText("Logo de Demo Biz");
+      expect(image.getAttribute("src")).toContain(encodeURIComponent(businessWithLogoB.updated_at!));
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
+    fireEvent.click(screen.getByRole("button", {name: "Generar QR"}));
+
+    await waitFor(() => {
+      expect(mocks.fetchQrAssetBlob).toHaveBeenNthCalledWith(
+        2,
+        "/api/businesses/biz-1/qr-assets/branded.png",
+        "owner-token",
+      );
+    });
+    const firstBrandedPreview = await screen.findByAltText("Preview QR con logo");
+    expect(firstBrandedPreview.getAttribute("src")).toBe("blob:branded-preview-a");
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    fireEvent.change(logoInput, {
+      target: {files: [new File(["logo-b"], "logo-b.png", {type: "image/png"})]},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo"}));
+
+    await waitFor(() => {
+      const image = screen.getByAltText("Logo de Demo Biz");
+      expect(image.getAttribute("src")).toContain(encodeURIComponent(businessWithLogoB.updated_at!));
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
+    fireEvent.click(screen.getByRole("button", {name: "Generar QR"}));
+
+    await waitFor(() => {
+      expect(mocks.fetchQrAssetBlob).toHaveBeenNthCalledWith(
+        4,
+        "/api/businesses/biz-1/qr-assets/branded.png",
+        "owner-token",
+      );
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:branded-preview-a");
+    });
+    const secondBrandedPreview = await screen.findByAltText("Preview QR con logo");
+    expect(secondBrandedPreview.getAttribute("src")).toBe("blob:branded-preview-b");
+
+    const brandedCard = screen.getByTestId("qr-card-branded");
+    fireEvent.click(within(brandedCard).getByRole("button", {name: "Descargar PNG"}));
+    fireEvent.click(within(brandedCard).getByRole("button", {name: "Descargar SVG"}));
+
+    await waitFor(() => {
+      expect(mocks.downloadQrAsset).toHaveBeenNthCalledWith(
+        1,
+        "/api/businesses/biz-1/qr-assets/branded.png",
+        "owner-token",
+      );
+      expect(mocks.downloadQrAsset).toHaveBeenNthCalledWith(
+        2,
+        "/api/businesses/biz-1/qr-assets/branded.svg",
+        "owner-token",
+      );
+    });
+
+    const paths = mocks.request.mock.calls.map(([path]) => path as string);
+    expect(qrGenerations).toBe(2);
+    expect(paths.filter((path) => path === "/api/businesses/biz-1/logo")).toHaveLength(2);
+    expect(paths).not.toContain("/api/businesses/biz-1/menu/replace");
+    expect(paths.filter((path) => path === "/api/businesses/biz-1")).toHaveLength(3);
+    expect(paths.filter((path) => path === "/api/businesses/biz-1/qr/generate")).toHaveLength(2);
+  }, 90000);
+
+  it("loads the business selector from the admin listing for platform admins", async () => {
+    const adminBusiness: Business = {
+      id: "biz-admin",
+      logo_url: null,
+      name: "Admin Biz",
+      slug: "admin-biz",
+      status: "demo",
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([adminBusiness]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-admin") return adminBusiness;
+      if (path === "/api/businesses/biz-admin/menu") {
+        return {current: null, public_code: null, versions: []};
+      }
+      if (path === "/api/businesses/biz-admin/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-admin/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-admin/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    render(<BusinessPanel isPlatformAdmin token="admin-token" />);
+
+    await screen.findByText("ADMIN BIZ");
+    expect(mocks.listBusinesses).toHaveBeenCalledWith("admin-token", true);
+  });
+
+  it("shows suspended owners in read-only mode and recovers after a focus refresh", async () => {
+    let currentBusiness: Business = {
+      id: "biz-2",
+      logo_url: null,
+      name: "Cafe Norte",
+      slug: "cafe-norte",
+      status: "suspended",
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+    const menuState = {
+      current: {
+        created_at: "2026-08-20T12:00:00Z",
+        file_size: 128,
+        id: "menu-2",
+        original_filename: "menu.pdf",
+        status: "active" as const,
+        version: 1,
+      },
+      public_code: "cafe-code",
+      versions: [
+        {
+          created_at: "2026-08-20T12:00:00Z",
+          file_size: 128,
+          id: "menu-1",
+          original_filename: "menu-v1.pdf",
+          status: "archived" as const,
+          version: 1,
+        },
+        {
+          created_at: "2026-08-20T12:05:00Z",
+          file_size: 128,
+          id: "menu-2",
+          original_filename: "menu-v2.pdf",
+          status: "active" as const,
+          version: 2,
+        },
+      ],
+    };
+
+    mocks.listBusinesses.mockImplementation(async () => [currentBusiness]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-2") return currentBusiness;
+      if (path === "/api/businesses/biz-2/menu") return menuState;
+      if (path === "/api/businesses/biz-2/analytics/summary") {
+        return {busiest_hour: 5, scans_30d: 30, scans_7d: 7, scans_today: 1};
+      }
+      if (path === "/api/businesses/biz-2/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-2/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    const {container} = render(<BusinessPanel token="owner-token" />);
+
+    await screen.findByText("CAFE NORTE");
+    expect(screen.getByTestId("suspended-panel")).toBeTruthy();
+    expect(screen.getByText("Negocio suspendido")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+
+    const fileInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+    for (const input of fileInputs) {
+      expect(input.disabled).toBe(true);
+    }
+    expect(screen.getByRole("button", {name: "Guardar logo"}).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", {name: "Reemplazar carta"}).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", {name: /Restaurar esta versión/}).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
+    expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", {name: "Estadísticas"}));
+    expect(screen.getByText("05:00")).toBeTruthy();
+
+    currentBusiness = {
+      ...currentBusiness,
+      status: "active",
+      updated_at: "2026-08-20T12:10:00Z",
+    };
+
+    fireEvent.focus(window);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("suspended-panel")).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    const refreshedInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+    expect(refreshedInputs.every((input) => input.disabled === false)).toBe(true);
+    fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
+    expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(false);
+  }, 15000);
+
+  it("refreshes the header metadata after replace and rollback", async () => {
+    const currentBusiness: Business = {
+      id: "biz-3",
+      logo_url: null,
+      name: "Bar Central",
+      slug: "bar-central",
+      status: "active",
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+    let currentMenuState: MenuState = {
+      current: {
+        created_at: "2026-08-20T10:00:00Z",
+        file_size: 128,
+        id: "menu-1",
+        original_filename: "menu-v1.pdf",
+        status: "active" as const,
+        version: 1,
+      },
+      public_code: "bar-code",
+      versions: [
+        {
+          created_at: "2026-08-20T10:00:00Z",
+          file_size: 128,
+          id: "menu-1",
+          original_filename: "menu-v1.pdf",
+          status: "active" as const,
+          version: 1,
+        },
+      ],
+    };
+
+    mocks.listBusinesses.mockResolvedValue([currentBusiness]);
+    mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
+      if (path === "/api/businesses/biz-3") return currentBusiness;
+      if (path === "/api/businesses/biz-3/menu") return currentMenuState;
+      if (path === "/api/businesses/biz-3/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-3/analytics/scans?period=7d") return [];
+      if (path === "/api/businesses/biz-3/qr") return [];
+      if (path === "/api/businesses/biz-3/menu/replace" && init?.method === "POST") {
+        currentMenuState = {
+          current: {
+            created_at: "2026-08-21T10:00:00Z",
+            file_size: 256,
+            id: "menu-2",
+            original_filename: "menu-v2.pdf",
+            status: "active" as const,
+            version: 2,
+          },
+          public_code: "bar-code",
+          versions: [
+            {
+              created_at: "2026-08-20T10:00:00Z",
+              file_size: 128,
+              id: "menu-1",
+              original_filename: "menu-v1.pdf",
+              status: "archived" as const,
+              version: 1,
+            },
+            {
+              created_at: "2026-08-21T10:00:00Z",
+              file_size: 256,
+              id: "menu-2",
+              original_filename: "menu-v2.pdf",
+              status: "active" as const,
+              version: 2,
+            },
+          ],
+        };
+        return currentMenuState;
+      }
+      if (path === "/api/businesses/biz-3/menu/rollback" && init?.method === "POST") {
+        currentMenuState = {
+          current: {
+            created_at: "2026-08-20T10:00:00Z",
+            file_size: 128,
+            id: "menu-1",
+            original_filename: "menu-v1.pdf",
+            status: "active" as const,
+            version: 1,
+          },
+          public_code: "bar-code",
+          versions: [
+            {
+              created_at: "2026-08-20T10:00:00Z",
+              file_size: 128,
+              id: "menu-1",
+              original_filename: "menu-v1.pdf",
+              status: "active" as const,
+              version: 1,
+            },
+            {
+              created_at: "2026-08-21T10:00:00Z",
+              file_size: 256,
+              id: "menu-2",
+              original_filename: "menu-v2.pdf",
+              status: "archived" as const,
+              version: 2,
+            },
+          ],
+        };
+        return currentMenuState;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    const {container} = render(<BusinessPanel token="owner-token" />);
+
+    await screen.findByText("BAR CENTRAL");
+    await waitFor(() => {
+      expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    const pdfInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+    const pdfInput = pdfInputs[pdfInputs.length - 1];
+    fireEvent.change(pdfInput, {
+      target: {files: [new File(["pdf"], "menu-v2.pdf", {type: "application/pdf"})]},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Reemplazar carta"}));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Última actualización: 21\/8\/2026/)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: /Restaurar esta versión/}));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
+    });
+  });
+});

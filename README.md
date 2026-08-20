@@ -24,6 +24,42 @@ Credenciales de seed:
 - Platform admin: `admin@example.com` / `admin12345`
 - Owner Bar Central: `owner@example.com` / `owner12345`
 
+Estas credenciales existen solo para desarrollo local, seed y tests. No deben usarse en produccion.
+
+## Admin real de operacion
+
+Para crear un platform admin real, usar el script administrativo. Reutiliza el mismo hash de password del backend, valida email, no imprime la password y no promueve usuarios existentes a admin salvo que se pida explicitamente.
+
+Interactivo dentro del contenedor backend:
+
+```bash
+docker compose run --rm -it \
+  -v "${PWD}/scripts/create_admin.py:/app/create_admin.py" \
+  backend python /app/create_admin.py
+```
+
+No interactivo usando variables de entorno temporales:
+
+```bash
+ADMIN_EMAIL="ops@example.com" ADMIN_PASSWORD="replace-with-a-strong-password" \
+docker compose run --rm \
+  -v "${PWD}/scripts/create_admin.py:/app/create_admin.py" \
+  -e ADMIN_EMAIL \
+  -e ADMIN_PASSWORD \
+  backend python /app/create_admin.py
+```
+
+Si el usuario ya existe pero no es platform admin, el script falla de forma segura. Para promoverlo explicitamente y reemplazar su password hash:
+
+```bash
+ADMIN_EMAIL="ops@example.com" ADMIN_PASSWORD="replace-with-a-strong-password" \
+docker compose run --rm \
+  -v "${PWD}/scripts/create_admin.py:/app/create_admin.py" \
+  -e ADMIN_EMAIL \
+  -e ADMIN_PASSWORD \
+  backend python /app/create_admin.py --promote-existing
+```
+
 ## Gates
 
 Backend:

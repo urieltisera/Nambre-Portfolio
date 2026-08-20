@@ -46,6 +46,7 @@ from app.schemas import (
 from app.services.analytics_service import daily_series, record_scan, summary
 from app.services.menu_service import get_active_menu, rollback_menu, upload_menu_pdf
 from app.services.qr_service import generate_qr_assets
+from app.services.user_admin_service import normalize_email
 from app.storage.local import LocalStorage
 
 router = APIRouter()
@@ -389,11 +390,17 @@ def admin_assign_owner(
     business = db.get(Business, business_id)
     if business is None:
         raise HTTPException(status_code=404, detail="Business not found")
-    owner = db.scalar(select(User).where(User.email == payload.email.lower()))
+    normalized_email = normalize_email(payload.email)
+    owner = db.scalar(select(User).where(User.email == normalized_email))
     if owner is None:
-        owner = User(email=payload.email.lower(), password_hash=hash_password(payload.password))
+        owner = User(email=normalized_email, password_hash=hash_password(payload.password))
         db.add(owner)
         db.flush()
+    elif not verify_password(payload.password, owner.password_hash):
+        raise HTTPException(
+            status_code=409,
+            detail="User email already exists with a different password",
+        )
     if not db.scalar(
         select(Membership).where(
             Membership.user_id == owner.id, Membership.business_id == business_id

@@ -1,29 +1,39 @@
+import importlib.util
 from base64 import b64decode
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import cast
+from typing import Sequence, cast
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo
 
+import pytest
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth.security import verify_password
 from app.models import (
     Business,
     BusinessStatus,
     DestinationType,
     DynamicLink,
+    Membership,
     MembershipRole,
     MenuAsset,
     MenuAssetStatus,
     QRCode,
     ScanEvent,
+    User,
 )
 from app.services import analytics_service
 from app.services.qr_service import qr_payload
+from app.services.user_admin_service import (
+    AdminCreationError,
+    CreatePlatformAdminResult,
+    create_platform_admin,
+)
 from tests.conftest import add_membership, auth_headers, make_business, make_user
 
 PDF_V1 = b"%PDF-1.4\n%v1\n%%EOF\n"
@@ -72,7 +82,7 @@ def svg_embedded_logo_bytes(svg: str) -> bytes:
     return b64decode(href[len(prefix) :])
 
 
-def qr_record_signature(records: list[QRCode]) -> set[tuple[str, str, str, str]]:
+def qr_record_signature(records: Sequence[QRCode]) -> set[tuple[str, str, str, str]]:
     return {
         (
             item.id,
@@ -117,6 +127,16 @@ def create_scan(
     return event
 
 
+def load_script_module(name: str, relative_path: str):
+    script_path = Path(__file__).resolve().parents[2] / relative_path
+    spec = importlib.util.spec_from_file_location(name, script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_inactive_user_cannot_login(client, db: Session) -> None:
     make_user(db, "off@example.com", active=False)
     response = client.post(
@@ -146,6 +166,165 @@ def test_membership_isolation(client, db: Session) -> None:
         client.get(f"/api/businesses/{business_a.id}", headers=auth_headers(outsider)).status_code
         == 403
     )
+
+
+def test_create_platform_admin_real_user_and_login(client, db: Session) -> None:
+    result = create_platform_admin(db, "Real.Admin@example.com", "real-admin-123")
+    assert result == CreatePlatformAdminResult.created
+
+    created_user = db.scalar(select(User).where(User.email == "real.admin@example.com"))
+    assert created_user is not None
+    assert created_user.is_platform_admin is True
+    assert created_user.password_hash != "real-admin-123"
+    assert verify_password("real-admin-123", created_user.password_hash)
+
+    login = client.post(
+        "/auth/login",
+        json={"email": "Real.Admin@example.com", "password": "real-admin-123"},
+    )
+    assert login.status_code == 200
+    assert "password" not in login.text.lower()
+
+    me = client.get(
+        "/api/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json() == {
+        "id": created_user.id,
+        "email": "real.admin@example.com",
+        "is_platform_admin": True,
+    }
+
+
+def test_create_platform_admin_is_idempotent_for_existing_admin(db: Session) -> None:
+    first = create_platform_admin(db, "stable-admin@example.com", "first-pass-123")
+    assert first == CreatePlatformAdminResult.created
+    existing = db.scalar(select(User).where(User.email == "stable-admin@example.com"))
+    assert existing is not None
+    first_hash = existing.password_hash
+
+    second = create_platform_admin(db, "stable-admin@example.com", "second-pass-456")
+    assert second == CreatePlatformAdminResult.existing_admin
+    db.refresh(existing)
+    assert existing.password_hash == first_hash
+    assert verify_password("first-pass-123", existing.password_hash)
+    assert not verify_password("second-pass-456", existing.password_hash)
+
+
+def test_existing_non_admin_is_not_promoted_silently(db: Session) -> None:
+    user = make_user(db, "existing-owner@example.com", password="owner-pass-123")
+    original_hash = user.password_hash
+
+    with pytest.raises(AdminCreationError, match="explicit promotion"):
+        create_platform_admin(db, "existing-owner@example.com", "new-admin-pass")
+
+    db.refresh(user)
+    assert user.is_platform_admin is False
+    assert user.password_hash == original_hash
+
+
+def test_create_platform_admin_can_promote_existing_user_only_explicitly(
+    client, db: Session
+) -> None:
+    user = make_user(db, "promote-me@example.com", password="owner-pass-123")
+
+    result = create_platform_admin(
+        db,
+        "promote-me@example.com",
+        "new-admin-pass-123",
+        promote_existing=True,
+    )
+    assert result == CreatePlatformAdminResult.promoted_existing
+
+    db.refresh(user)
+    assert user.is_platform_admin is True
+    assert verify_password("new-admin-pass-123", user.password_hash)
+
+    login = client.post(
+        "/auth/login",
+        json={"email": "promote-me@example.com", "password": "new-admin-pass-123"},
+    )
+    assert login.status_code == 200
+
+
+def test_admin_assign_owner_creates_real_owner_login_and_scope(client, db: Session) -> None:
+    admin = make_user(db, "ops-admin@example.com", admin=True)
+    business = make_business(db, "Real Biz", "real-biz")
+    other_business = make_business(db, "Other Biz", "other-biz")
+
+    assigned = client.post(
+        f"/admin/businesses/{business.id}/owner",
+        headers=auth_headers(admin),
+        json={"email": "owner.real@example.com", "password": "owner-pass-123", "role": "owner"},
+    )
+    assert assigned.status_code == 200
+    assert assigned.json()["email"] == "owner.real@example.com"
+    assert assigned.json()["is_platform_admin"] is False
+    assert "password" not in assigned.text.lower()
+
+    owner_login = client.post(
+        "/auth/login",
+        json={"email": "owner.real@example.com", "password": "owner-pass-123"},
+    )
+    assert owner_login.status_code == 200
+
+    owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+    me_owner = client.get("/api/me", headers=owner_headers)
+    assert me_owner.status_code == 200
+    assert me_owner.json()["is_platform_admin"] is False
+
+    my_businesses = client.get("/api/me/businesses", headers=owner_headers)
+    assert my_businesses.status_code == 200
+    assert [(item["id"], item["name"]) for item in my_businesses.json()] == [
+        (business.id, "Real Biz")
+    ]
+    assert all(item["id"] != other_business.id for item in my_businesses.json())
+    assert client.get("/admin/businesses", headers=owner_headers).status_code == 403
+
+
+def test_admin_assign_owner_rejects_existing_email_with_different_password(
+    client, db: Session
+) -> None:
+    admin = make_user(db, "conflict-admin@example.com", admin=True)
+    owner = make_user(db, "shared-owner@example.com", password="existing-owner-123")
+    business = make_business(db, "Conflict Biz", "conflict-biz")
+
+    assigned = client.post(
+        f"/admin/businesses/{business.id}/owner",
+        headers=auth_headers(admin),
+        json={
+            "email": "shared-owner@example.com",
+            "password": "different-owner-456",
+            "role": "owner",
+        },
+    )
+    assert assigned.status_code == 409
+    assert assigned.json()["detail"] == "User email already exists with a different password"
+
+    db.refresh(owner)
+    assert verify_password("existing-owner-123", owner.password_hash)
+    assert not verify_password("different-owner-456", owner.password_hash)
+    assert db.scalar(select(Membership).where(Membership.business_id == business.id)) is None
+
+
+def test_seed_script_keeps_dev_credentials_working(client, db: Session, monkeypatch) -> None:
+    seed = load_script_module("seed_script", "scripts/seed.py")
+    monkeypatch.setattr(seed, "SessionLocal", lambda: db)
+
+    seed.main()
+    seed.main()
+
+    admin_login = client.post(
+        "/auth/login",
+        json={"email": "admin@example.com", "password": "admin12345"},
+    )
+    owner_login = client.post(
+        "/auth/login",
+        json={"email": "owner@example.com", "password": "owner12345"},
+    )
+    assert admin_login.status_code == 200
+    assert owner_login.status_code == 200
 
 
 def test_pdf_validation_versioning_and_rollback(client, db: Session) -> None:

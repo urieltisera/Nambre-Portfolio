@@ -3,7 +3,7 @@
 import React from "react";
 import {ArrowLeft, LogOut, Plus} from "lucide-react";
 import {useCallback, useEffect, useState} from "react";
-import {MenuFlowBrand} from "@/components/brand/MenuFlowBrand";
+import {NambreBrand} from "@/components/brand/NambreBrand";
 import {Button} from "@/components/ui/Button";
 import {Card} from "@/components/ui/Card";
 import {PageHeader} from "@/components/ui/PageHeader";
@@ -118,10 +118,10 @@ export function AdminPanel({
     <section className="admin-shell">
       <div className="admin-shell__header">
         <div className="admin-shell__brand-block">
-          <MenuFlowBrand mode="admin" />
+          <NambreBrand mode="admin" />
           <PageHeader
             subtitle="Capacidades reales disponibles para operación de la plataforma."
-            title="MenuFlow Admin"
+            title="Nambre Admin"
           />
         </div>
         <div className="actions">

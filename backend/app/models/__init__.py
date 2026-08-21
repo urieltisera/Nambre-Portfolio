@@ -1,8 +1,12 @@
 from app.models.entities import (
+    AcceptanceMethod,
+    AuditEvent,
     Business,
     BusinessStatus,
     DestinationType,
     DynamicLink,
+    LegalAcceptance,
+    LegalDocumentType,
     Membership,
     MembershipRole,
     MenuAsset,
@@ -12,13 +16,18 @@ from app.models.entities import (
     QRType,
     ScanEvent,
     User,
+    UserSession,
 )
 
 __all__ = [
+    "AcceptanceMethod",
+    "AuditEvent",
     "Business",
     "BusinessStatus",
     "DestinationType",
     "DynamicLink",
+    "LegalAcceptance",
+    "LegalDocumentType",
     "Membership",
     "MembershipRole",
     "MenuAsset",
@@ -28,4 +37,5 @@ __all__ = [
     "QRType",
     "ScanEvent",
     "User",
+    "UserSession",
 ]

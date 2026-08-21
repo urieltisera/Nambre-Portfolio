@@ -2,7 +2,7 @@
 
 import React, {useState} from "react";
 import {Menu} from "lucide-react";
-import {MenuFlowBrand} from "@/components/brand/MenuFlowBrand";
+import {NambreBrand} from "@/components/brand/NambreBrand";
 import {NavItem, Sidebar} from "@/components/layout/Sidebar";
 import {MobileDrawer} from "@/components/layout/MobileDrawer";
 import {Button} from "@/components/ui/Button";
@@ -58,7 +58,7 @@ export function OwnerAppShell({
             <Menu size={18} />
           </Button>
           <div className="owner-shell__mobile-brand">
-            <MenuFlowBrand className="owner-shell__mobile-logo" />
+            <NambreBrand className="owner-shell__mobile-logo" />
             <p>{mobileTitle}</p>
           </div>
         </header>

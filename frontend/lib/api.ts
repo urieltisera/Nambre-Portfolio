@@ -48,6 +48,37 @@ export type User = {
   is_platform_admin: boolean;
 };
 
+export type LegalDocumentType =
+  | "terms"
+  | "privacy"
+  | "acceptable_use"
+  | "cookies_analytics"
+  | "ai_policy";
+
+export type LegalDocumentStatus = {
+  document_type: LegalDocumentType;
+  current_version: string;
+  accepted_version: string | null;
+  accepted_at: string | null;
+  is_current: boolean;
+};
+
+export type LegalStatus = {
+  documents: LegalDocumentStatus[];
+  pending_documents: LegalDocumentType[];
+  requires_acceptance: boolean;
+};
+
+type LoginResponse = {
+  access_token: string;
+};
+
+type LoginLegalErrorDetail = {
+  code?: string;
+  legal_status?: LegalStatus;
+  message?: string;
+};
+
 export type BusinessStatusAction = {
   label: "Activar" | "Suspender" | "Reactivar";
   nextStatus: Business["status"];
@@ -66,6 +97,15 @@ export class ApiError extends Error {
   }
 }
 
+export class LegalAcceptanceRequiredError extends Error {
+  legalStatus: LegalStatus;
+
+  constructor(legalStatus: LegalStatus) {
+    super("Antes de ingresar, necesitás aceptar la versión legal vigente de Nambre.");
+    this.legalStatus = legalStatus;
+  }
+}
+
 export async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API}${path}`, {
     ...init,
@@ -80,19 +120,35 @@ export async function request<T>(path: string, token: string, init: RequestInit 
   return response.json() as Promise<T>;
 }
 
-export async function login(email: string, password: string): Promise<string> {
+export async function login(
+  email: string,
+  password: string,
+  options?: {acceptLegal?: boolean},
+): Promise<string> {
   const response = await fetch(`${API}/auth/login`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({email, password}),
+    body: JSON.stringify({accept_legal: options?.acceptLegal ?? false, email, password}),
   });
   if (!response.ok) {
+    if (response.status === 403) {
+      const contentType = response.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json")) {
+        const data = (await response.json()) as {detail?: LoginLegalErrorDetail};
+        if (
+          data.detail?.code === "legal_acceptance_required" &&
+          data.detail.legal_status !== undefined
+        ) {
+          throw new LegalAcceptanceRequiredError(data.detail.legal_status);
+        }
+      }
+    }
     if (response.status === 401) {
       throw new Error("El email o la contraseña no son correctos.");
     }
     throw new Error("No se pudo iniciar sesión.");
   }
-  const data = (await response.json()) as { access_token: string };
+  const data = (await response.json()) as LoginResponse;
   return data.access_token;
 }
 
@@ -159,6 +215,18 @@ export function slugifyBusinessName(value: string): string {
 
 export async function currentUser(token: string): Promise<User> {
   return request<User>("/api/me", token);
+}
+
+export async function currentLegalStatus(token: string): Promise<LegalStatus> {
+  return request<LegalStatus>("/api/legal/status", token);
+}
+
+export async function acceptCurrentLegalDocuments(token: string): Promise<LegalStatus> {
+  return request<LegalStatus>("/api/legal/accept", token, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({acceptance_method: "ui_checkbox"}),
+  });
 }
 
 export async function fetchQrAssetBlob(path: string, token: string): Promise<Blob> {

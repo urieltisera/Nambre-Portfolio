@@ -5,7 +5,7 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, object_session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ["SECRET_KEY"] = "test-secret-key-change-me-32-bytes-minimum"
@@ -16,8 +16,17 @@ os.environ["APP_TIMEZONE"] = "America/Argentina/Buenos_Aires"
 
 from app.auth.security import create_access_token, hash_password  # noqa: E402
 from app.db import Base, get_db  # noqa: E402
+from app.legal import CURRENT_LEGAL_VERSIONS  # noqa: E402
 from app.main import create_app  # noqa: E402
-from app.models import Business, BusinessStatus, Membership, MembershipRole, User  # noqa: E402
+from app.models import (  # noqa: E402
+    AcceptanceMethod,
+    Business,
+    BusinessStatus,
+    LegalAcceptance,
+    Membership,
+    MembershipRole,
+    User,
+)
 
 
 @pytest.fixture()
@@ -80,4 +89,28 @@ def add_membership(db: Session, user: User, business: Business, role: Membership
 
 
 def auth_headers(user: User) -> dict[str, str]:
+    session = object_session(user)
+    if session is not None:
+        for document_type, document_version in CURRENT_LEGAL_VERSIONS.items():
+            exists = (
+                session.query(LegalAcceptance)
+                .filter_by(
+                    user_id=user.id,
+                    business_id=None,
+                    document_type=document_type,
+                    document_version=document_version,
+                )
+                .first()
+            )
+            if exists is None:
+                session.add(
+                    LegalAcceptance(
+                        user_id=user.id,
+                        business_id=None,
+                        document_type=document_type,
+                        document_version=document_version,
+                        acceptance_method=AcceptanceMethod.seeded,
+                    )
+                )
+        session.commit()
     return {"Authorization": f"Bearer {create_access_token(user)}"}

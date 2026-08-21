@@ -45,7 +45,7 @@ export function OwnerSettings({
   return (
     <section className="settings-screen">
       <PageHeader
-        subtitle="Administrá tu cuenta y preferencias de MenuFlow."
+        subtitle="Administrá tu cuenta y preferencias de Nambre."
         title="Configuración"
       />
       <div className="settings-grid">

@@ -7,7 +7,12 @@ import {LoginForm} from "../components/auth/LoginForm";
 import {BusinessPanel} from "../components/BusinessPanel";
 import {AppearanceProvider, useAppearance} from "../components/ui/AppearanceProvider";
 import {appearancePreferences, LEGACY_STORAGE_KEY} from "../lib/appearance-preferences";
-import type {Business, User} from "../lib/api";
+import {
+  LegalAcceptanceRequiredError,
+  type Business,
+  type LegalStatus,
+  type User,
+} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
   listBusinesses: vi.fn(),
@@ -75,7 +80,7 @@ describe("LoginForm", () => {
 
     const email = screen.getByLabelText("Email") as HTMLInputElement;
     const password = screen.getByLabelText("Contraseña") as HTMLInputElement;
-    const brand = screen.getByAltText("MenuFlow") as HTMLImageElement;
+    const brand = screen.getByAltText("Nambre") as HTMLImageElement;
 
     expect(brand.getAttribute("src")).toContain("/brand/logo-horizontal-light.svg");
     expect(email.value).toBe("");
@@ -104,9 +109,55 @@ describe("LoginForm", () => {
     fireEvent.submit(screen.getByRole("button", {name: "Ingresar"}).closest("form")!);
 
     await waitFor(() => {
-      expect(mocks.login).toHaveBeenCalledWith("owner@example.com", "owner12345");
+      expect(mocks.login).toHaveBeenCalledWith("owner@example.com", "owner12345", {
+        acceptLegal: false,
+      });
     });
     expect(onToken).toHaveBeenCalledWith("abc123");
+  });
+
+  it("reveals legal consent inside the login card, opens modals and preserves typed credentials", async () => {
+    const onToken = vi.fn();
+    const legalStatus: LegalStatus = {
+      documents: [],
+      pending_documents: ["terms", "privacy", "acceptable_use"],
+      requires_acceptance: true,
+    };
+    mocks.login
+      .mockRejectedValueOnce(new LegalAcceptanceRequiredError(legalStatus))
+      .mockResolvedValueOnce("accepted-token");
+    stubMatchMedia(false);
+
+    render(
+      <AppearanceProvider>
+        <LoginForm onToken={onToken} />
+      </AppearanceProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Email"), {target: {value: "owner@example.com"}});
+    fireEvent.change(screen.getByLabelText("Contraseña"), {target: {value: "owner12345"}});
+    fireEvent.submit(screen.getByRole("button", {name: "Ingresar"}).closest("form")!);
+
+    await screen.findByTestId("login-legal-consent");
+    expect(screen.getByRole("button", {name: "Ingresar"}).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", {name: "Términos"}));
+    expect(screen.getByRole("dialog", {name: "Terminos y Condiciones"})).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Cerrar"}));
+    expect(screen.queryByRole("dialog", {name: "Terminos y Condiciones"})).toBeNull();
+    expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("owner@example.com");
+    expect((screen.getByLabelText("Contraseña") as HTMLInputElement).value).toBe("owner12345");
+
+    fireEvent.click(screen.getByLabelText("Aceptar documentos legales vigentes"));
+    expect(screen.getByRole("button", {name: "Ingresar"}).hasAttribute("disabled")).toBe(false);
+    fireEvent.submit(screen.getByRole("button", {name: "Ingresar"}).closest("form")!);
+
+    await waitFor(() => {
+      expect(mocks.login).toHaveBeenLastCalledWith("owner@example.com", "owner12345", {
+        acceptLegal: true,
+      });
+    });
+    expect(onToken).toHaveBeenCalledWith("accepted-token");
   });
 });
 
@@ -150,13 +201,13 @@ describe("Owner shell", () => {
     await screen.findByText("Hola, Demo Biz 👋");
 
     fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
-    const drawer = screen.getByRole("dialog", {name: "MenuFlow"});
+    const drawer = screen.getByRole("dialog", {name: "Nambre"});
     expect(drawer).toBeTruthy();
 
     fireEvent.click(within(drawer).getByRole("button", {name: "Configuración"}));
 
     await screen.findByRole("heading", {name: "Configuración"});
-    expect(screen.queryByRole("dialog", {name: "MenuFlow"})).toBeNull();
+    expect(screen.queryByRole("dialog", {name: "Nambre"})).toBeNull();
 
     fireEvent.click(screen.getByRole("radio", {name: /Oscuro/}));
     fireEvent.click(screen.getByRole("radio", {name: /Maximalista/}));
@@ -217,7 +268,7 @@ describe("Owner shell", () => {
       throw new Error("Sidebar not found");
     }
 
-    const expandedBrand = within(sidebar).getByAltText("MenuFlow") as HTMLImageElement;
+    const expandedBrand = within(sidebar).getByAltText("Nambre") as HTMLImageElement;
     expect(expandedBrand.getAttribute("src")).toContain("/brand/logo-horizontal-light.svg");
     expect(screen.getByTestId("dashboard-layout-minimal")).toBeTruthy();
 
@@ -230,7 +281,7 @@ describe("Owner shell", () => {
     expect(within(sidebar).queryByText("Activo")).toBeNull();
     expect(within(sidebar).getByRole("button", {name: "Inicio"})).toBeTruthy();
     expect(within(sidebar).getByRole("button", {name: "Cerrar sesión"})).toBeTruthy();
-    const collapsedBrand = within(sidebar).getByAltText("MenuFlow") as HTMLImageElement;
+    const collapsedBrand = within(sidebar).getByAltText("Nambre") as HTMLImageElement;
     expect(collapsedBrand.getAttribute("src")).toContain("/brand/isotype-teal.svg");
     expect(within(sidebar).getByRole("button", {name: "Inicio"}).className).toContain("is-active");
 

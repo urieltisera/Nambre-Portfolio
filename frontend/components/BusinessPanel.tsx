@@ -314,9 +314,20 @@ export function BusinessPanel({
   );
 
   const sidebarBottom = (collapsed: boolean) => (
-    <div className={collapsed ? "sidebar-summary sidebar-summary--collapsed" : "sidebar-summary"}>
-      {!collapsed ? (
-        business ? (
+    collapsed ? (
+      <Button
+        aria-label="Cerrar sesión"
+        className="sidebar-summary__logout"
+        data-tooltip="Cerrar sesión"
+        onClick={() => void onLogout()}
+        title="Cerrar sesión"
+        variant="secondary"
+      >
+        <LogOut size={18} />
+      </Button>
+    ) : (
+      <div className="sidebar-summary">
+        {business ? (
           <>
             <div>
               <strong>{business.name}</strong>
@@ -326,19 +337,12 @@ export function BusinessPanel({
           </>
         ) : (
           <p className="muted">Sin negocio activo</p>
-        )
-      ) : null}
-      <Button
-        aria-label="Cerrar sesión"
-        className={collapsed ? "sidebar-summary__logout" : undefined}
-        data-tooltip={collapsed ? "Cerrar sesión" : undefined}
-        onClick={() => void onLogout()}
-        title={collapsed ? "Cerrar sesión" : undefined}
-        variant="secondary"
-      >
-        {collapsed ? <LogOut size={18} /> : "Cerrar sesión"}
-      </Button>
-    </div>
+        )}
+        <Button onClick={() => void onLogout()} variant="secondary">
+          Cerrar sesión
+        </Button>
+      </div>
+    )
   );
 
   const desktopUtility = (
@@ -407,7 +411,7 @@ export function BusinessPanel({
       items={navigationItems}
       mobileTitle={business.name}
       onNavigate={(next) => setView(next as View)}
-      title="MenuFlow"
+      title="Nambre"
     >
       {isSuspended ? (
         <div data-testid="suspended-panel">
@@ -663,7 +667,7 @@ export function BusinessPanel({
                     ))
                   ) : (
                     <EmptyState
-                      description="Subí tu primer PDF para comenzar a usar MenuFlow."
+                      description="Subí tu primer PDF para comenzar a usar Nambre."
                       title="Todavía no subiste una carta"
                     />
                   )}
@@ -782,7 +786,7 @@ export function BusinessPanel({
                   ))
                 ) : (
                   <EmptyState
-                    description="Subí tu primer PDF para comenzar a usar MenuFlow."
+                    description="Subí tu primer PDF para comenzar a usar Nambre."
                     title="Todavía no subiste una carta"
                   />
                 )}

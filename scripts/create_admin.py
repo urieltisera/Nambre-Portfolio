@@ -26,7 +26,7 @@ from app.services.user_admin_service import (
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a real MenuFlow platform admin without exposing passwords."
+        description="Create a real Nambre platform admin without exposing passwords."
     )
     parser.add_argument(
         "--email", help="Admin email. Falls back to ADMIN_EMAIL or interactive input."

@@ -78,7 +78,9 @@ describe("Page", () => {
     await waitFor(() => {
       expect(mocks.logout).toHaveBeenCalledWith("owner-token");
     });
-    expect(screen.getByRole("button", {name: "Mock login"})).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("button", {name: "Mock login"})).toBeTruthy();
+    });
     expect(screen.queryByText("Business panel")).toBeNull();
   });
 });

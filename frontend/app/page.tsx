@@ -8,7 +8,12 @@ import {LoginForm} from "@/components/LoginForm";
 import {Alert} from "@/components/ui/Alert";
 import {AppearanceProvider} from "@/components/ui/AppearanceProvider";
 import {Button} from "@/components/ui/Button";
-import {canAccessAdmin, currentUser, logout, User} from "@/lib/api";
+import {
+  canAccessAdmin,
+  currentUser,
+  logout,
+  User,
+} from "@/lib/api";
 
 export default function Page() {
   const [token, setToken] = useState<string | null>(null);

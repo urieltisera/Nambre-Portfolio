@@ -1,6 +1,6 @@
 import React from "react";
 import {PanelLeftClose, PanelLeftOpen} from "lucide-react";
-import {MenuFlowBrand} from "@/components/brand/MenuFlowBrand";
+import {NambreBrand} from "@/components/brand/NambreBrand";
 import {Button} from "@/components/ui/Button";
 import {cn} from "@/lib/cn";
 
@@ -34,7 +34,7 @@ export function Sidebar({
       {collapsed ? (
         <div className="sidebar__header">
           <span className="sidebar__brand" aria-label={title}>
-            <MenuFlowBrand mode="mark" />
+            <NambreBrand mode="mark" />
           </span>
           <Button
             aria-label={collapseLabel}
@@ -50,7 +50,7 @@ export function Sidebar({
       ) : (
         <div className="sidebar__header">
           <span className="sidebar__brand" aria-label={title}>
-            <MenuFlowBrand mode="horizontal" />
+            <NambreBrand mode="horizontal" />
           </span>
           <Button
             aria-label={collapseLabel}

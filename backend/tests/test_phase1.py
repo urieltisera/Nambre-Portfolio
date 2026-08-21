@@ -181,7 +181,11 @@ def test_create_platform_admin_real_user_and_login(client, db: Session) -> None:
 
     login = client.post(
         "/auth/login",
-        json={"email": "Real.Admin@example.com", "password": "real-admin-123"},
+        json={
+            "accept_legal": True,
+            "email": "Real.Admin@example.com",
+            "password": "real-admin-123",
+        },
     )
     assert login.status_code == 200
     assert "password" not in login.text.lower()
@@ -244,7 +248,11 @@ def test_create_platform_admin_can_promote_existing_user_only_explicitly(
 
     login = client.post(
         "/auth/login",
-        json={"email": "promote-me@example.com", "password": "new-admin-pass-123"},
+        json={
+            "accept_legal": True,
+            "email": "promote-me@example.com",
+            "password": "new-admin-pass-123",
+        },
     )
     assert login.status_code == 200
 
@@ -266,7 +274,11 @@ def test_admin_assign_owner_creates_real_owner_login_and_scope(client, db: Sessi
 
     owner_login = client.post(
         "/auth/login",
-        json={"email": "owner.real@example.com", "password": "owner-pass-123"},
+        json={
+            "accept_legal": True,
+            "email": "owner.real@example.com",
+            "password": "owner-pass-123",
+        },
     )
     assert owner_login.status_code == 200
 
@@ -318,11 +330,11 @@ def test_seed_script_keeps_dev_credentials_working(client, db: Session, monkeypa
 
     admin_login = client.post(
         "/auth/login",
-        json={"email": "admin@example.com", "password": "admin12345"},
+        json={"accept_legal": True, "email": "admin@example.com", "password": "admin12345"},
     )
     owner_login = client.post(
         "/auth/login",
-        json={"email": "owner@example.com", "password": "owner12345"},
+        json={"accept_legal": True, "email": "owner@example.com", "password": "owner12345"},
     )
     assert admin_login.status_code == 200
     assert owner_login.status_code == 200

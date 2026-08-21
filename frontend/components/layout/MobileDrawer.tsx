@@ -2,7 +2,7 @@
 
 import React, {useEffect, useRef} from "react";
 import {X} from "lucide-react";
-import {MenuFlowBrand} from "@/components/brand/MenuFlowBrand";
+import {NambreBrand} from "@/components/brand/NambreBrand";
 import {Button} from "@/components/ui/Button";
 
 export function MobileDrawer({
@@ -40,7 +40,7 @@ export function MobileDrawer({
       />
       <div aria-label={title} className="mobile-drawer__panel" role="dialog" aria-modal="true">
         <div className="mobile-drawer__header">
-          <MenuFlowBrand />
+          <NambreBrand />
           <Button
             aria-label="Cerrar menú"
             onClick={onClose}

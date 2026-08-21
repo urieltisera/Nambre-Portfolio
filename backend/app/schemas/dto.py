@@ -2,7 +2,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
-from app.models import BusinessStatus, MembershipRole, MenuAssetStatus, QRStatus, QRType
+from app.models import (
+    AcceptanceMethod,
+    BusinessStatus,
+    LegalDocumentType,
+    MembershipRole,
+    MenuAssetStatus,
+    QRStatus,
+    QRType,
+)
 
 
 class TokenOut(BaseModel):
@@ -13,6 +21,7 @@ class TokenOut(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    accept_legal: bool = False
 
 
 class UserOut(BaseModel):
@@ -92,3 +101,23 @@ class AnalyticsSummaryOut(BaseModel):
 class DailyScanOut(BaseModel):
     date: str
     scans: int
+
+
+class LegalDocumentStatusOut(BaseModel):
+    document_type: LegalDocumentType
+    current_version: str
+    accepted_version: str | None
+    accepted_at: datetime | None
+    is_current: bool
+
+
+class LegalStatusOut(BaseModel):
+    documents: list[LegalDocumentStatusOut]
+    pending_documents: list[LegalDocumentType]
+    requires_acceptance: bool
+
+
+class LegalAcceptIn(BaseModel):
+    acceptance_method: AcceptanceMethod = AcceptanceMethod.ui_checkbox
+    business_id: str | None = None
+    document_types: list[LegalDocumentType] | None = None

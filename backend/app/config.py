@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "MenuFlow"
+    app_name: str = "Nambre"
     environment: str = "local"
     app_timezone: str = "America/Argentina/Buenos_Aires"
     database_url: str = "postgresql+psycopg://menuflow:menuflow@localhost:5432/menuflow"
@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     max_pdf_bytes: int = 10 * 1024 * 1024
     storage_path: str = "storage"
     public_base_url: str = "http://localhost:8000"
+    scan_event_retention_days: int = 90
+    audit_event_retention_days: int = 365
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     cors_origin_regex: str | None = (
         r"^https?://("

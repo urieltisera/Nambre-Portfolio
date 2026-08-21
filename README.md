@@ -1,6 +1,6 @@
-# MenuFlow
+# Nambre
 
-MVP Fase 1: un QR permanente para un negocio, PDF de carta reemplazable, rollback, QR estándar/branded y estadísticas básicas.
+MVP Fase 1 de Nambre: un QR permanente para un negocio, PDF de carta reemplazable, rollback, QR estandar/branded y estadisticas basicas.
 
 ## Local
 
@@ -87,6 +87,10 @@ npm run build
 ## Redirect público
 
 `GET /r/{public_code}` usa `302 Found`. La ruta registra el scan y redirige a `/m/{public_code}/menu.pdf`, una URL pública estable que no expone storage keys ni IDs internos.
+
+## Legal & Security Gate
+
+La documentación técnica de `Nambre Legal & Security Gate v1` quedó en `docs/legal-security-gate-v1.md`.
 
 ## Storage actual
 

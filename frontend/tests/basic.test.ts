@@ -22,8 +22,8 @@ afterEach(() => {
 });
 
 describe("frontend smoke", () => {
-  it("keeps the MenuFlow promise explicit", () => {
-    expect("Un solo QR para siempre").toContain("QR");
+  it("keeps the Nambre promise explicit", () => {
+    expect("Tu carta, siempre al día.").toContain("carta");
   });
 
   it("builds backend asset urls as same-origin relative paths", async () => {

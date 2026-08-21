@@ -2,12 +2,36 @@
 
 import React, {useState} from "react";
 import {Eye, EyeOff, LogIn} from "lucide-react";
-import {MenuFlowBrand} from "@/components/brand/MenuFlowBrand";
-import {login} from "@/lib/api";
+import {NambreBrand} from "@/components/brand/NambreBrand";
+import {
+  LegalAcceptanceRequiredError,
+  LegalDocumentType,
+  LegalStatus,
+  login,
+} from "@/lib/api";
 import {Alert} from "@/components/ui/Alert";
 import {Button} from "@/components/ui/Button";
 import {Card} from "@/components/ui/Card";
 import {Input} from "@/components/ui/Input";
+
+const LEGAL_DOCUMENT_COPY = {
+  privacy: {
+    body: "Contenido provisorio para implementacion: esta modal representa la Politica de Privacidad vigente de Nambre hasta recibir el texto legal definitivo.",
+    title: "Politica de Privacidad",
+  },
+  terms: {
+    body: "Contenido provisorio para implementacion: esta modal representa los Terminos y Condiciones vigentes de Nambre hasta recibir el texto legal definitivo.",
+    title: "Terminos y Condiciones",
+  },
+} satisfies Record<"privacy" | "terms", {body: string; title: string}>;
+
+const LEGAL_DOCUMENT_LABELS: Record<LegalDocumentType, string> = {
+  acceptable_use: "Uso aceptable",
+  ai_policy: "Politica de IA",
+  cookies_analytics: "Cookies y analitica",
+  privacy: "Privacidad",
+  terms: "Terminos",
+};
 
 export function LoginForm({onToken}: {onToken: (token: string) => void}) {
   const accessRequestUrl = process.env.NEXT_PUBLIC_ACCESS_REQUEST_URL?.trim();
@@ -17,15 +41,36 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
   const [loading, setLoading] = useState(false);
   const [showAccessInfo, setShowAccessInfo] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptLegal, setAcceptLegal] = useState(false);
+  const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
+  const [openDocument, setOpenDocument] = useState<keyof typeof LEGAL_DOCUMENT_COPY | null>(null);
+
+  const legalAcceptanceRequired = legalStatus?.requires_acceptance === true;
+  const pendingLegalLabels = legalStatus?.pending_documents
+    .filter((documentType) => documentType !== "terms" && documentType !== "privacy")
+    .map((documentType) => LEGAL_DOCUMENT_LABELS[documentType]);
+
+  function resetLegalRequirement() {
+    setAcceptLegal(false);
+    setLegalStatus(null);
+    setOpenDocument(null);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError("");
     try {
-      onToken(await login(email, password));
+      onToken(await login(email, password, {acceptLegal}));
+      resetLegalRequirement();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+      if (err instanceof LegalAcceptanceRequiredError) {
+        setLegalStatus(err.legalStatus);
+        setAcceptLegal(false);
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+      }
     } finally {
       setLoading(false);
     }
@@ -35,7 +80,7 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
     <main className="login-screen">
       <div className="login-screen__backdrop" />
       <Card className="login-card">
-        <MenuFlowBrand className="login-card__brand" />
+        <NambreBrand className="login-card__brand" />
         <div className="login-card__header">
           <h1>Bienvenido de nuevo</h1>
           <p>Ingresá para administrar tu carta digital.</p>
@@ -45,7 +90,12 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
             autoComplete="email"
             disabled={loading}
             label="Email"
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              if (legalAcceptanceRequired) {
+                resetLegalRequirement();
+              }
+            }}
             placeholder="tu@email.com"
             type="email"
             value={email}
@@ -54,7 +104,12 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
             autoComplete="current-password"
             disabled={loading}
             label="Contraseña"
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              if (legalAcceptanceRequired) {
+                resetLegalRequirement();
+              }
+            }}
             rightSlot={
               <button
                 aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
@@ -68,8 +123,54 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
             type={showPassword ? "text" : "password"}
             value={password}
           />
+          {legalAcceptanceRequired ? (
+            <div className="login-legal" data-testid="login-legal-consent">
+              <label className="login-legal__checkbox">
+                <input
+                  aria-label="Aceptar documentos legales vigentes"
+                  checked={acceptLegal}
+                  disabled={loading}
+                  onChange={(event) => setAcceptLegal(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  Acepto los{" "}
+                  <button
+                    className="login-legal__link"
+                    onClick={() => setOpenDocument("terms")}
+                    type="button"
+                  >
+                    Términos
+                  </button>{" "}
+                  y la{" "}
+                  <button
+                    className="login-legal__link"
+                    onClick={() => setOpenDocument("privacy")}
+                    type="button"
+                  >
+                    Política de privacidad
+                  </button>{" "}
+                  vigentes de Nambre.
+                </span>
+              </label>
+              <p className="login-legal__hint">
+                Esta aceptación se registra contra la versión vigente del paquete legal de Nambre.
+                {pendingLegalLabels && pendingLegalLabels.length > 0
+                  ? ` También incluye: ${pendingLegalLabels.join(", ")}.`
+                  : ""}
+              </p>
+            </div>
+          ) : null}
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <Button disabled={loading || !email.trim() || !password.trim()} type="submit">
+          <Button
+            disabled={
+              loading ||
+              !email.trim() ||
+              !password.trim() ||
+              (legalAcceptanceRequired && !acceptLegal)
+            }
+            type="submit"
+          >
             <LogIn size={18} /> {loading ? "Ingresando..." : "Ingresar"}
           </Button>
           {accessRequestUrl ? (
@@ -93,14 +194,41 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
               {showAccessInfo ? (
                 <Alert tone="info">
                   Durante el piloto el acceso se habilita manualmente. Coordiná el alta con el
-                  equipo de MenuFlow antes de intentar iniciar sesión.
+                  equipo de Nambre antes de intentar iniciar sesión.
                 </Alert>
               ) : null}
             </>
           )}
         </form>
-        <p className="login-card__footer">Tu carta. Tu QR. Siempre actualizado.</p>
+        <p className="login-card__footer">Tu carta, siempre al día.</p>
       </Card>
+      {openDocument ? (
+        <div className="legal-modal" role="presentation">
+          <button
+            aria-label="Cerrar modal legal"
+            className="legal-modal__backdrop"
+            onClick={() => setOpenDocument(null)}
+            type="button"
+          />
+          <Card
+            aria-modal="true"
+            className="legal-modal__card"
+            role="dialog"
+            aria-labelledby="legal-modal-title"
+          >
+            <div className="legal-modal__header">
+              <div>
+                <p className="legal-modal__eyebrow">Texto legal provisorio</p>
+                <h2 id="legal-modal-title">{LEGAL_DOCUMENT_COPY[openDocument].title}</h2>
+              </div>
+              <Button onClick={() => setOpenDocument(null)} size="sm" variant="ghost">
+                Cerrar
+              </Button>
+            </div>
+            <p>{LEGAL_DOCUMENT_COPY[openDocument].body}</p>
+          </Card>
+        </div>
+      ) : null}
     </main>
   );
 }

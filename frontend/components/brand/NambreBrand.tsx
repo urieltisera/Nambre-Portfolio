@@ -4,24 +4,24 @@ import React from "react";
 import {useAppearance} from "@/components/ui/AppearanceProvider";
 import {cn} from "@/lib/cn";
 
-type MenuFlowBrandProps = {
+type NambreBrandProps = {
   className?: string;
   decorative?: boolean;
   mode?: "horizontal" | "mark" | "admin";
 };
 
-export function MenuFlowBrand({
+export function NambreBrand({
   className,
   decorative = false,
   mode = "horizontal",
-}: MenuFlowBrandProps) {
+}: NambreBrandProps) {
   const {resolvedTheme} = useAppearance();
   const isDark = resolvedTheme === "dark";
   const markSrc = isDark ? "/brand/isotype-white.svg" : "/brand/isotype-teal.svg";
   const horizontalSrc = isDark
     ? "/brand/logo-horizontal-dark.svg"
     : "/brand/logo-horizontal-light.svg";
-  const alt = decorative ? "" : mode === "admin" ? "MenuFlow Admin" : "MenuFlow";
+  const alt = decorative ? "" : mode === "admin" ? "Nambre Admin" : "Nambre";
 
   if (mode === "mark") {
     return (

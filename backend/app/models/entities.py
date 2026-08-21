@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -25,6 +25,7 @@ class BusinessStatus(StrEnum):
 class MembershipRole(StrEnum):
     owner = "owner"
     manager = "manager"
+    staff = "staff"
 
 
 class MenuAssetStatus(StrEnum):
@@ -49,6 +50,20 @@ class QRType(StrEnum):
 class QRStatus(StrEnum):
     draft = "draft"
     approved = "approved"
+
+
+class LegalDocumentType(StrEnum):
+    terms = "terms"
+    privacy = "privacy"
+    acceptable_use = "acceptable_use"
+    cookies_analytics = "cookies_analytics"
+    ai_policy = "ai_policy"
+
+
+class AcceptanceMethod(StrEnum):
+    ui_checkbox = "ui_checkbox"
+    admin_recorded = "admin_recorded"
+    seeded = "seeded"
 
 
 class Business(Base):
@@ -78,6 +93,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user")
+    legal_acceptances: Mapped[list["LegalAcceptance"]] = relationship(back_populates="user")
+    sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
 
 
 class Membership(Base):
@@ -156,3 +173,60 @@ class ScanEvent(Base):
         DateTime(timezone=True), default=now_utc, index=True
     )
     user_agent_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+class LegalAcceptance(Base):
+    __tablename__ = "legal_acceptances"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "business_id",
+            "document_type",
+            "document_version",
+            name="uq_legal_acceptance_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    business_id: Mapped[str | None] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    document_type: Mapped[LegalDocumentType] = mapped_column(Enum(LegalDocumentType), index=True)
+    document_version: Mapped[str] = mapped_column(String(64))
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    acceptance_method: Mapped[AcceptanceMethod] = mapped_column(Enum(AcceptanceMethod))
+
+    user: Mapped[User] = relationship(back_populates="legal_acceptances")
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    business_id: Mapped[str | None] = mapped_column(
+        ForeignKey("businesses.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(120), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    details_json: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, index=True
+    )

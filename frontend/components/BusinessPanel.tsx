@@ -18,6 +18,7 @@ import {ActivityChart} from "@/components/owner/ActivityChart";
 import {OwnerAppShell} from "@/components/owner/OwnerAppShell";
 import {OwnerSettings} from "@/components/owner/OwnerSettings";
 import {Alert} from "@/components/ui/Alert";
+import {useAppearance} from "@/components/ui/AppearanceProvider";
 import {Badge} from "@/components/ui/Badge";
 import {Button} from "@/components/ui/Button";
 import {Card} from "@/components/ui/Card";
@@ -87,15 +88,35 @@ export function BusinessPanel({
   const [logoMessage, setLogoMessage] = useState("");
   const [qrDownloadError, setQrDownloadError] = useState("");
   const [qrPreviewVersion, setQrPreviewVersion] = useState(0);
+  const loadBusinessesRequestRef = useRef<Promise<void> | null>(null);
+  const refreshRequestRef = useRef<Promise<void> | null>(null);
+  const refreshRequestBusinessIdRef = useRef<string | null>(null);
+  const lastFreshSyncAtRef = useRef(0);
+  const {visualStyle} = useAppearance();
 
   const businessId = business?.id;
   const isSuspended = business?.status === "suspended";
   const canMutate = business ? canOperateBusiness(business.status) : false;
+  const isMinimal = visualStyle === "minimal";
 
   const loadBusinesses = useCallback(async () => {
-    const items = await listBusinesses(token, isPlatformAdmin);
-    setBusinesses(items);
-    setBusiness((current) => items.find((item) => item.id === current?.id) ?? items[0] ?? null);
+    if (loadBusinessesRequestRef.current) {
+      return loadBusinessesRequestRef.current;
+    }
+    const requestPromise = (async () => {
+      const items = await listBusinesses(token, isPlatformAdmin);
+      setBusinesses(items);
+      setBusiness(
+        (current) => items.find((item) => item.id === current?.id) ?? items[0] ?? null,
+      );
+    })();
+    loadBusinessesRequestRef.current = requestPromise;
+    void requestPromise.finally(() => {
+      if (loadBusinessesRequestRef.current === requestPromise) {
+        loadBusinessesRequestRef.current = null;
+      }
+    });
+    return requestPromise;
   }, [isPlatformAdmin, token]);
 
   useEffect(() => {
@@ -104,23 +125,57 @@ export function BusinessPanel({
       .catch(() => setError("Usá el seed o seleccioná un negocio desde un usuario con membership."));
   }, [loadBusinesses]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: {force?: boolean}) => {
     if (!businessId) return;
-    const [businessState, menuState, analyticsSummary, scanSeries, qrCodes] = await Promise.all([
-      request<Business>(`/api/businesses/${businessId}`, token),
-      request<MenuState>(`/api/businesses/${businessId}/menu`, token),
-      request<Summary>(`/api/businesses/${businessId}/analytics/summary`, token),
-      request<DailyScan[]>(`/api/businesses/${businessId}/analytics/scans?period=30d`, token),
-      request<QR[]>(`/api/businesses/${businessId}/qr`, token),
-    ]);
-    setBusiness(businessState);
-    setBusinesses((current) =>
-      current.map((item) => (item.id === businessState.id ? businessState : item)),
-    );
-    setMenu(menuState);
-    setSummary(analyticsSummary);
-    setSeries(scanSeries);
-    setQr(qrCodes);
+    const force = options?.force ?? false;
+    if (
+      !force &&
+      refreshRequestRef.current &&
+      refreshRequestBusinessIdRef.current === businessId
+    ) {
+      return refreshRequestRef.current;
+    }
+    if (
+      force &&
+      refreshRequestRef.current &&
+      refreshRequestBusinessIdRef.current === businessId
+    ) {
+      try {
+        await refreshRequestRef.current;
+      } catch {
+        // Fall through and request a fresh snapshot after a failed in-flight load.
+      }
+    }
+    const requestPromise = (async () => {
+      const [businessState, menuState, analyticsSummary, scanSeries, qrCodes] =
+        await Promise.all([
+          request<Business>(`/api/businesses/${businessId}`, token),
+          request<MenuState>(`/api/businesses/${businessId}/menu`, token),
+          request<Summary>(`/api/businesses/${businessId}/analytics/summary`, token),
+          request<DailyScan[]>(
+            `/api/businesses/${businessId}/analytics/scans?period=30d`,
+            token,
+          ),
+          request<QR[]>(`/api/businesses/${businessId}/qr`, token),
+        ]);
+      setBusiness(businessState);
+      setBusinesses((current) =>
+        current.map((item) => (item.id === businessState.id ? businessState : item)),
+      );
+      setMenu(menuState);
+      setSummary(analyticsSummary);
+      setSeries(scanSeries);
+      setQr(qrCodes);
+    })();
+    refreshRequestRef.current = requestPromise;
+    refreshRequestBusinessIdRef.current = businessId;
+    void requestPromise.finally(() => {
+      if (refreshRequestRef.current === requestPromise) {
+        refreshRequestRef.current = null;
+        refreshRequestBusinessIdRef.current = null;
+      }
+    });
+    return requestPromise;
   }, [businessId, token]);
 
   useEffect(() => {
@@ -130,8 +185,12 @@ export function BusinessPanel({
 
   useEffect(() => {
     function syncFreshState() {
-      void loadBusinesses().catch(() => undefined);
-      void refresh().catch(() => undefined);
+      const now = performance.now();
+      if (now - lastFreshSyncAtRef.current < 500) {
+        return;
+      }
+      lastFreshSyncAtRef.current = now;
+      void Promise.all([loadBusinesses(), refresh()]).catch(() => undefined);
     }
 
     function handleVisibilityChange() {
@@ -161,10 +220,10 @@ export function BusinessPanel({
       });
       setSelectedPdf(null);
       setMenuMessage("Carta guardada correctamente.");
-      await refresh();
+      await refresh({force: true});
     } catch (uploadError: unknown) {
       setMenuMessage(uploadErrorMessage("menu", uploadError));
-      await refresh();
+      await refresh({force: true});
     } finally {
       setUploadingMenu(false);
     }
@@ -185,10 +244,10 @@ export function BusinessPanel({
       setBusinesses((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setSelectedLogo(null);
       setLogoMessage("Logo guardado correctamente.");
-      await refresh();
+      await refresh({force: true});
     } catch (uploadError: unknown) {
       setLogoMessage(uploadErrorMessage("logo", uploadError));
-      await refresh();
+      await refresh({force: true});
     } finally {
       setUploadingLogo(false);
     }
@@ -207,7 +266,7 @@ export function BusinessPanel({
         body: JSON.stringify({menu_asset_id: id}),
       });
     } finally {
-      await refresh();
+      await refresh({force: true});
     }
   }
 
@@ -359,178 +418,378 @@ export function BusinessPanel({
         </div>
       ) : null}
       {view === "dashboard" ? (
-        <section className="owner-view owner-view--dashboard">
-          <PageHeader
-            subtitle="Así está funcionando tu carta digital hoy."
-            title={`Hola, ${business.name} 👋`}
-          />
-          <div className="metric-grid">
-            <MetricCard
-              helper={new Date().toLocaleDateString("es-AR")}
-              label="Visualizaciones hoy"
-              value={summary?.scans_today ?? 0}
+        isMinimal ? (
+          <section
+            className="owner-view owner-view--dashboard owner-view--minimal"
+            data-testid="dashboard-layout-minimal"
+          >
+            <PageHeader
+              subtitle="Tus acciones clave, sin ruido visual."
+              title={`Hola, ${business.name} 👋`}
             />
-            <MetricCard
-              helper="Actividad real reciente"
-              label="Últimos 7 días"
-              value={summary?.scans_7d ?? 0}
-            />
-            <MetricCard
-              helper="Ventana completa disponible"
-              label="Últimos 30 días"
-              value={summary?.scans_30d ?? 0}
-            />
-            <MetricCard
-              helper="Últimos 30 días"
-              label="Hora pico"
-              value={formatPeakHour(summary?.busiest_hour ?? null)}
-            />
-          </div>
-          <div className="content-grid">
-            <Card className="panel-stack">
-              <h2>Resumen rápido</h2>
-              <p className="muted">
-                Estado: {businessStatusLabel(business.status)} · Carta:{" "}
-                {menu?.current ? "Publicada" : "Pendiente"} · Última actualización: {lastUpdate}
-              </p>
+            <div className="compact-metric-strip">
+              <MetricCard
+                helper="Hoy"
+                label="Visualizaciones"
+                value={summary?.scans_today ?? 0}
+              />
+              <MetricCard helper="7 días" label="Actividad" value={summary?.scans_7d ?? 0} />
+              <MetricCard
+                helper="Hora pico"
+                label="Mejor horario"
+                value={formatPeakHour(summary?.busiest_hour ?? null)}
+              />
+            </div>
+            <Card className="panel-stack owner-compact-card">
+              <div className="owner-compact-card__topline">
+                <Badge tone={statusTone(business.status)}>
+                  {businessStatusLabel(business.status)}
+                </Badge>
+                <span className="muted">
+                  Carta {menu?.current ? "publicada" : "pendiente"} · {lastUpdate}
+                </span>
+              </div>
+              <div className="compact-action-row">
+                <Button onClick={() => setView("menu")} size="sm">
+                  <FileUp size={16} /> Actualizar carta
+                </Button>
+                <Button onClick={() => setView("qr")} size="sm" variant="secondary">
+                  <QrCode size={16} /> Mi QR
+                </Button>
+                <Button onClick={() => setView("analytics")} size="sm" variant="ghost">
+                  <BarChart3 size={16} /> Estadísticas
+                </Button>
+              </div>
+            </Card>
+            <Card className="panel-stack owner-compact-card">
+              <h2>Actividad en 7 días</h2>
               <ActivityChart
                 contained={false}
-                description="Actividad reciente de los últimos 7 días."
-                emptyDescription="Todavía no hay actividad de escaneos para mostrar."
+                description="Resumen corto de uso reciente."
+                emptyDescription="Todavía no hay actividad suficiente para mostrar."
                 emptyTitle="Sin actividad reciente"
                 points={recentActivityPoints}
-                title="Actividad reciente"
+                title="Actividad en 7 días"
                 variant="compact"
               />
             </Card>
-            <Card className="panel-stack">
-              <h2>Acciones rápidas</h2>
-              <p className="muted visual-detail">Los accesos directos siguen usando la operación real del negocio.</p>
-              <Button onClick={() => setView("menu")}>
-                <FileUp size={18} /> Actualizar carta
-              </Button>
-              <Button onClick={() => setView("qr")} variant="secondary">
-                <QrCode size={18} /> Ver mi QR
-              </Button>
-              <Button onClick={() => setView("analytics")} variant="secondary">
-                <BarChart3 size={18} /> Ver estadísticas
-              </Button>
-            </Card>
-          </div>
-        </section>
+          </section>
+        ) : (
+          <section
+            className="owner-view owner-view--dashboard owner-view--maximal"
+            data-testid="dashboard-layout-maximal"
+          >
+            <PageHeader
+              subtitle="Así está funcionando tu carta digital hoy."
+              title={`Hola, ${business.name} 👋`}
+            />
+            <div className="metric-grid">
+              <MetricCard
+                helper={new Date().toLocaleDateString("es-AR")}
+                label="Visualizaciones hoy"
+                value={summary?.scans_today ?? 0}
+              />
+              <MetricCard
+                helper="Actividad real reciente"
+                label="Últimos 7 días"
+                value={summary?.scans_7d ?? 0}
+              />
+              <MetricCard
+                helper="Ventana completa disponible"
+                label="Últimos 30 días"
+                value={summary?.scans_30d ?? 0}
+              />
+              <MetricCard
+                helper="Últimos 30 días"
+                label="Hora pico"
+                value={formatPeakHour(summary?.busiest_hour ?? null)}
+              />
+            </div>
+            <div className="content-grid">
+              <Card className="panel-stack">
+                <h2>Resumen rápido</h2>
+                <p className="muted">
+                  Estado: {businessStatusLabel(business.status)} · Carta:{" "}
+                  {menu?.current ? "Publicada" : "Pendiente"} · Última actualización: {lastUpdate}
+                </p>
+                <ActivityChart
+                  contained={false}
+                  description="Actividad reciente de los últimos 7 días."
+                  emptyDescription="Todavía no hay actividad de escaneos para mostrar."
+                  emptyTitle="Sin actividad reciente"
+                  points={recentActivityPoints}
+                  title="Actividad reciente"
+                  variant="compact"
+                />
+              </Card>
+              <Card className="panel-stack">
+                <h2>Acciones rápidas</h2>
+                <p className="muted visual-detail">
+                  Los accesos directos siguen usando la operación real del negocio.
+                </p>
+                <Button onClick={() => setView("menu")}>
+                  <FileUp size={18} /> Actualizar carta
+                </Button>
+                <Button onClick={() => setView("qr")} variant="secondary">
+                  <QrCode size={18} /> Ver mi QR
+                </Button>
+                <Button onClick={() => setView("analytics")} variant="secondary">
+                  <BarChart3 size={18} /> Ver estadísticas
+                </Button>
+              </Card>
+            </div>
+          </section>
+        )
       ) : null}
 
       {view === "menu" ? (
-        <section className="owner-view">
-          <PageHeader
-            subtitle="Actualizá tu menú cuando quieras sin cambiar el QR de tus mesas."
-            title="Mi carta"
-          />
-          <div className="content-grid">
-            <Card className="panel-stack">
-              <h2>Carta actual</h2>
-              <p>{menu?.current?.original_filename ?? "No hay PDF publicado"}</p>
-              <Badge tone={menu?.current ? "success" : "warning"}>
-                {menu?.current ? "Publicada" : "Pendiente"}
-              </Badge>
-              <p className="muted">Última actualización: {lastUpdate}</p>
-              <Alert tone="info">
-                Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF todas las
-                veces que necesites, sin reimprimir nada.
-              </Alert>
+        isMinimal ? (
+          <section className="owner-view owner-view--minimal" data-testid="menu-layout-minimal">
+            <PageHeader
+              subtitle="Actualizá lo esencial y dejá el resto plegado hasta necesitarlo."
+              title="Mi carta"
+            />
+            <Card className="panel-stack owner-compact-card">
+              <div className="owner-compact-card__topline">
+                <Badge tone={menu?.current ? "success" : "warning"}>
+                  {menu?.current ? "Publicada" : "Pendiente"}
+                </Badge>
+                <span className="muted">Última actualización: {lastUpdate}</span>
+              </div>
+              <strong>{menu?.current?.original_filename ?? "No hay PDF publicado"}</strong>
+              <p className="muted">
+                Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF sin
+                reimprimir.
+              </p>
             </Card>
-            <Card className="panel-stack">
-              <h2>Logo y PDF</h2>
-              <label className="field">
-                <span className="field__label">Logo</span>
-                <input
-                  className="ui-input"
-                  disabled={!canMutate}
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
-                />
-              </label>
-              <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
-              {business.logo_url ? (
-                <div className="asset-preview">
-                  <img
-                    alt={`Logo de ${business.name}`}
-                    className="logo-preview"
-                    src={assetUrl(
-                      `${business.logo_url}?t=${encodeURIComponent(
-                        business.updated_at ?? Date.now().toString(),
-                      )}`,
-                    )}
+            <details className="owner-disclosure" open>
+              <summary>Actualizar PDF</summary>
+              <div className="owner-disclosure__content panel-stack">
+                <label className="field">
+                  <span className="field__label">PDF</span>
+                  <input
+                    className="ui-input"
+                    disabled={!canMutate}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
                   />
-                </div>
-              ) : null}
-              <Button disabled={!canMutate || !selectedLogo || uploadingLogo} onClick={uploadLogo}>
-                {uploadingLogo ? "Guardando..." : "Guardar logo"}
-              </Button>
-              {logoMessage ? (
-                <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
-                  {logoMessage}
-                </Alert>
-              ) : null}
-
-              <label className="field">
-                <span className="field__label">PDF</span>
-                <input
-                  className="ui-input"
-                  disabled={!canMutate}
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
-                />
-              </label>
-              <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
-              <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
-                {uploadingMenu ? "Guardando..." : menu?.current ? "Reemplazar carta" : "Guardar carta"}
-              </Button>
-              {menuMessage ? (
-                <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
-                  {menuMessage}
-                </Alert>
-              ) : null}
-            </Card>
-          </div>
-          <Card className="panel-stack">
-            <h2>Versiones publicadas</h2>
-            <div className="stack-list">
-              {menu?.versions.length ? (
-                menu.versions.map((asset) => (
-                  <div className="list-row list-row--actions" key={asset.id}>
-                    <div>
-                      <strong>
-                        v{asset.version} · {asset.original_filename}
-                      </strong>
-                      <p className="muted">
-                        {asset.status === "active" ? "Carta actual" : "Versión anterior"}
-                      </p>
-                    </div>
-                    {asset.status === "archived" ? (
-                      <Button
-                        disabled={!canMutate}
-                        onClick={() => void rollback(asset.id)}
-                        variant="secondary"
-                      >
-                        <RotateCcw size={16} /> Restaurar esta versión
-                      </Button>
-                    ) : (
-                      <Badge tone="success">Activa</Badge>
-                    )}
+                </label>
+                <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
+                <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
+                  {uploadingMenu
+                    ? "Guardando..."
+                    : menu?.current
+                      ? "Reemplazar carta"
+                      : "Guardar carta"}
+                </Button>
+                {menuMessage ? (
+                  <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
+                    {menuMessage}
+                  </Alert>
+                ) : null}
+              </div>
+            </details>
+            <details className="owner-disclosure">
+              <summary>Gestionar logo</summary>
+              <div className="owner-disclosure__content panel-stack">
+                <label className="field">
+                  <span className="field__label">Logo</span>
+                  <input
+                    className="ui-input"
+                    disabled={!canMutate}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
+                {business.logo_url ? (
+                  <div className="asset-preview">
+                    <img
+                      alt={`Logo de ${business.name}`}
+                      className="logo-preview"
+                      src={assetUrl(
+                        `${business.logo_url}?t=${encodeURIComponent(
+                          business.updated_at ?? Date.now().toString(),
+                        )}`,
+                      )}
+                    />
                   </div>
-                ))
-              ) : (
-                <EmptyState
-                  description="Subí tu primer PDF para comenzar a usar MenuFlow."
-                  title="Todavía no subiste una carta"
-                />
-              )}
+                ) : (
+                  <p className="muted">Todavía no configuraste un logo.</p>
+                )}
+                <Button
+                  disabled={!canMutate || !selectedLogo || uploadingLogo}
+                  onClick={uploadLogo}
+                >
+                  {uploadingLogo ? "Guardando..." : "Guardar logo"}
+                </Button>
+                {logoMessage ? (
+                  <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
+                    {logoMessage}
+                  </Alert>
+                ) : null}
+              </div>
+            </details>
+            <details className="owner-disclosure">
+              <summary>Ver versiones publicadas</summary>
+              <div className="owner-disclosure__content">
+                <div className="stack-list">
+                  {menu?.versions.length ? (
+                    menu.versions.map((asset) => (
+                      <div className="list-row list-row--actions" key={asset.id}>
+                        <div>
+                          <strong>
+                            v{asset.version} · {asset.original_filename}
+                          </strong>
+                          <p className="muted">
+                            {asset.status === "active" ? "Carta actual" : "Versión anterior"}
+                          </p>
+                        </div>
+                        {asset.status === "archived" ? (
+                          <Button
+                            disabled={!canMutate}
+                            onClick={() => void rollback(asset.id)}
+                            size="sm"
+                            variant="secondary"
+                          >
+                            <RotateCcw size={16} /> Restaurar
+                          </Button>
+                        ) : (
+                          <Badge tone="success">Activa</Badge>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyState
+                      description="Subí tu primer PDF para comenzar a usar MenuFlow."
+                      title="Todavía no subiste una carta"
+                    />
+                  )}
+                </div>
+              </div>
+            </details>
+          </section>
+        ) : (
+          <section className="owner-view owner-view--maximal" data-testid="menu-layout-maximal">
+            <PageHeader
+              subtitle="Actualizá tu menú cuando quieras sin cambiar el QR de tus mesas."
+              title="Mi carta"
+            />
+            <div className="content-grid">
+              <Card className="panel-stack">
+                <h2>Carta actual</h2>
+                <p>{menu?.current?.original_filename ?? "No hay PDF publicado"}</p>
+                <Badge tone={menu?.current ? "success" : "warning"}>
+                  {menu?.current ? "Publicada" : "Pendiente"}
+                </Badge>
+                <p className="muted">Última actualización: {lastUpdate}</p>
+                <Alert tone="info">
+                  Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF todas las
+                  veces que necesites, sin reimprimir nada.
+                </Alert>
+              </Card>
+              <Card className="panel-stack">
+                <h2>Logo y PDF</h2>
+                <label className="field">
+                  <span className="field__label">Logo</span>
+                  <input
+                    className="ui-input"
+                    disabled={!canMutate}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
+                {business.logo_url ? (
+                  <div className="asset-preview">
+                    <img
+                      alt={`Logo de ${business.name}`}
+                      className="logo-preview"
+                      src={assetUrl(
+                        `${business.logo_url}?t=${encodeURIComponent(
+                          business.updated_at ?? Date.now().toString(),
+                        )}`,
+                      )}
+                    />
+                  </div>
+                ) : null}
+                <Button
+                  disabled={!canMutate || !selectedLogo || uploadingLogo}
+                  onClick={uploadLogo}
+                >
+                  {uploadingLogo ? "Guardando..." : "Guardar logo"}
+                </Button>
+                {logoMessage ? (
+                  <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
+                    {logoMessage}
+                  </Alert>
+                ) : null}
+
+                <label className="field">
+                  <span className="field__label">PDF</span>
+                  <input
+                    className="ui-input"
+                    disabled={!canMutate}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
+                <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
+                  {uploadingMenu
+                    ? "Guardando..."
+                    : menu?.current
+                      ? "Reemplazar carta"
+                      : "Guardar carta"}
+                </Button>
+                {menuMessage ? (
+                  <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
+                    {menuMessage}
+                  </Alert>
+                ) : null}
+              </Card>
             </div>
-          </Card>
-        </section>
+            <Card className="panel-stack">
+              <h2>Versiones publicadas</h2>
+              <div className="stack-list">
+                {menu?.versions.length ? (
+                  menu.versions.map((asset) => (
+                    <div className="list-row list-row--actions" key={asset.id}>
+                      <div>
+                        <strong>
+                          v{asset.version} · {asset.original_filename}
+                        </strong>
+                        <p className="muted">
+                          {asset.status === "active" ? "Carta actual" : "Versión anterior"}
+                        </p>
+                      </div>
+                      {asset.status === "archived" ? (
+                        <Button
+                          disabled={!canMutate}
+                          onClick={() => void rollback(asset.id)}
+                          variant="secondary"
+                        >
+                          <RotateCcw size={16} /> Restaurar esta versión
+                        </Button>
+                      ) : (
+                        <Badge tone="success">Activa</Badge>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState
+                    description="Subí tu primer PDF para comenzar a usar MenuFlow."
+                    title="Todavía no subiste una carta"
+                  />
+                )}
+              </div>
+            </Card>
+          </section>
+        )
       ) : null}
 
       {view === "qr" ? (

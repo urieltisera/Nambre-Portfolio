@@ -46,7 +46,7 @@ function stubMatchMedia(matches = false) {
 }
 
 describe("LoginForm", () => {
-  it("renders empty credentials, toggles password visibility and submits the real login flow", async () => {
+  it("renders official branding, exposes the access CTA, toggles password visibility and submits the real login flow", async () => {
     const onToken = vi.fn();
     mocks.login.mockResolvedValue("abc123");
     stubMatchMedia(false);
@@ -59,10 +59,23 @@ describe("LoginForm", () => {
 
     const email = screen.getByLabelText("Email") as HTMLInputElement;
     const password = screen.getByLabelText("Contraseña") as HTMLInputElement;
+    const brand = screen.getByAltText("MenuFlow") as HTMLImageElement;
 
+    expect(brand.getAttribute("src")).toContain("/brand/logo-horizontal-light.svg");
     expect(email.value).toBe("");
     expect(password.value).toBe("");
     expect(screen.getByRole("button", {name: "Ingresar"}).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", {name: "¿Todavía no tenés cuenta? Solicitar acceso"}),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", {name: "¿Todavía no tenés cuenta? Solicitar acceso"}),
+    );
+    expect(
+      screen.getByText(/Durante el piloto el acceso se habilita manualmente/i),
+    ).toBeTruthy();
+    expect(mocks.login).not.toHaveBeenCalled();
 
     fireEvent.change(email, {target: {value: "owner@example.com"}});
     fireEvent.change(password, {target: {value: "owner12345"}});
@@ -181,17 +194,84 @@ describe("Owner shell", () => {
     );
 
     await screen.findByText("Hola, Bar Central 👋");
-    fireEvent.click(screen.getByRole("button", {name: "Contraer sidebar"}));
 
     const sidebar = container.querySelector("aside");
     if (!(sidebar instanceof HTMLElement)) {
       throw new Error("Sidebar not found");
     }
 
+    const expandedBrand = within(sidebar).getByAltText("MenuFlow") as HTMLImageElement;
+    expect(expandedBrand.getAttribute("src")).toContain("/brand/logo-horizontal-light.svg");
+    expect(screen.getByTestId("dashboard-layout-minimal")).toBeTruthy();
+
+    const homeButton = screen.getByRole("button", {name: "Inicio"});
+    expect(homeButton.className).toContain("is-active");
+    fireEvent.click(screen.getByRole("button", {name: "Contraer sidebar"}));
+
     expect(within(sidebar).queryByText("Mi carta")).toBeNull();
     expect(within(sidebar).queryByText("Bar Central")).toBeNull();
     expect(within(sidebar).queryByText("Activo")).toBeNull();
     expect(within(sidebar).getByRole("button", {name: "Inicio"})).toBeTruthy();
     expect(within(sidebar).getByRole("button", {name: "Cerrar sesión"})).toBeTruthy();
+    const collapsedBrand = within(sidebar).getByAltText("MenuFlow") as HTMLImageElement;
+    expect(collapsedBrand.getAttribute("src")).toContain("/brand/isotype-teal.svg");
+    expect(within(sidebar).getByRole("button", {name: "Inicio"}).className).toContain("is-active");
+
+    fireEvent.click(screen.getByRole("button", {name: "Expandir sidebar"}));
+    expect(within(sidebar).getByText("Mi carta")).toBeTruthy();
+    expect(within(sidebar).getByText("Bar Central")).toBeTruthy();
   });
+
+  it("switches between minimal and maximal layouts and persists the visible change", async () => {
+    stubMatchMedia(false);
+    const user: User = {
+      email: "owner@example.com",
+      id: "owner-1",
+      is_platform_admin: false,
+    };
+    const business: Business = {
+      id: "biz-3",
+      logo_url: null,
+      name: "Minimal Biz",
+      slug: "minimal-biz",
+      status: "active",
+      updated_at: "2026-08-21T12:00:00Z",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-3") return business;
+      if (path === "/api/businesses/biz-3/menu") {
+        return {current: null, public_code: null, versions: []};
+      }
+      if (path === "/api/businesses/biz-3/analytics/summary") {
+        return {busiest_hour: 18, scans_30d: 42, scans_7d: 9, scans_today: 2};
+      }
+      if (path === "/api/businesses/biz-3/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-3/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    render(
+      <AppearanceProvider>
+        <BusinessPanel onLogout={vi.fn()} token="owner-token" user={user} />
+      </AppearanceProvider>,
+    );
+
+    await screen.findByText("Hola, Minimal Biz 👋");
+    expect(screen.getByTestId("dashboard-layout-minimal")).toBeTruthy();
+    expect(screen.queryByTestId("dashboard-layout-maximal")).toBeNull();
+    expect(screen.queryByText("Resumen rápido")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", {name: "Configuración"}));
+    await screen.findByRole("heading", {name: "Configuración"});
+    fireEvent.click(screen.getByRole("radio", {name: /Maximalista/}));
+    fireEvent.click(screen.getByRole("button", {name: "Inicio"}));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-layout-maximal")).toBeTruthy();
+    });
+    expect(screen.getByText("Resumen rápido")).toBeTruthy();
+    expect(localStorage.getItem("menuflow.appearance")).toContain("\"visualStyle\":\"maximal\"");
+  }, 15000);
 });

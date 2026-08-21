@@ -426,21 +426,20 @@ select:focus-visible,
 }
 
 .menuflow-brand__admin-copy {
-  display: grid;
-  line-height: 1;
-}
-
-.menuflow-brand__admin-copy strong {
-  font-size: 1.1rem;
-  letter-spacing: -0.04em;
+  display: inline-flex;
+  align-items: center;
 }
 
 .menuflow-brand__admin-copy span {
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  background: var(--surface-secondary);
 }
 
 .login-screen {
@@ -487,6 +486,10 @@ select:focus-visible,
 .login-form {
   display: grid;
   gap: 1rem;
+}
+
+.login-card__request-access {
+  width: 100%;
 }
 
 .owner-shell {
@@ -540,6 +543,7 @@ select:focus-visible,
   top: 0;
   height: 100vh;
   width: var(--sidebar-width);
+  overflow: hidden;
   min-width: 0;
   border-right: 1px solid var(--border);
   background: var(--sidebar);
@@ -572,6 +576,7 @@ select:focus-visible,
 .sidebar__collapse {
   padding: 0;
   min-width: 42px;
+  width: 42px;
   flex: 0 0 auto;
   position: relative;
 }
@@ -624,19 +629,43 @@ select:focus-visible,
 }
 
 .sidebar--collapsed .sidebar__header {
-  flex-direction: column;
-  justify-content: flex-start;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 0.65rem;
 }
 
 .sidebar--collapsed .sidebar__brand,
 .sidebar--collapsed .sidebar__collapse {
   justify-content: center;
+  width: 100%;
 }
 
 .sidebar--collapsed .sidebar__link {
+  width: 48px;
+  max-width: 48px;
   justify-content: center;
   padding: 0;
   min-height: 48px;
+  margin: 0 auto;
+  border-radius: 14px;
+}
+
+.sidebar--collapsed .sidebar__nav {
+  justify-items: center;
+}
+
+.sidebar--collapsed .sidebar__brand {
+  overflow: hidden;
+}
+
+.sidebar--collapsed .sidebar__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar--collapsed .sidebar__link.is-active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
 }
 
 .sidebar__bottom,
@@ -656,6 +685,7 @@ select:focus-visible,
 }
 
 .sidebar-summary--collapsed {
+  width: 100%;
   justify-items: center;
   gap: 0.5rem;
 }
@@ -674,6 +704,7 @@ select:focus-visible,
 .sidebar--collapsed .sidebar__bottom {
   display: grid;
   justify-items: center;
+  width: 100%;
 }
 
 .sidebar--collapsed .sidebar__link[data-tooltip]::after,
@@ -804,6 +835,10 @@ select:focus-visible,
   gap: var(--panel-gap);
 }
 
+.owner-view--minimal {
+  gap: 0.9rem;
+}
+
 .metric-grid,
 .content-grid {
   display: grid;
@@ -841,6 +876,53 @@ select:focus-visible,
 
 .content-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-metric-strip {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compact-action-row {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.owner-compact-card {
+  gap: 0.9rem;
+  box-shadow: none;
+}
+
+.owner-compact-card__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.owner-disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.owner-disclosure summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.95rem 1rem;
+  font-weight: 700;
+}
+
+.owner-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.owner-disclosure__content {
+  padding: 0 1rem 1rem;
 }
 
 .panel-stack {
@@ -1193,6 +1275,14 @@ select:focus-visible,
   font-weight: 600;
 }
 
+:root[data-visual-style="minimal"] .metric-grid {
+  display: none;
+}
+
+:root[data-visual-style="minimal"] .compact-metric-strip .metric-card {
+  min-height: 0;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1204,6 +1294,7 @@ select:focus-visible,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .compact-metric-strip,
   .settings-grid,
   .content-grid,
   .admin-layout,
@@ -1269,7 +1360,8 @@ select:focus-visible,
   .settings-business,
   .settings-session,
   .page-header,
-  .admin-shell__header {
+  .admin-shell__header,
+  .owner-compact-card__topline {
     flex-direction: column;
     align-items: stretch;
   }

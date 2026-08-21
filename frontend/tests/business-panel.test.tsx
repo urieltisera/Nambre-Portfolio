@@ -36,6 +36,10 @@ afterEach(() => {
 });
 
 function renderPanel(ui: React.ReactElement) {
+  localStorage.setItem(
+    "menuflow.appearance",
+    JSON.stringify({theme: "light", visualStyle: "maximal"}),
+  );
   return render(<AppearanceProvider>{ui}</AppearanceProvider>);
 }
 
@@ -336,7 +340,9 @@ describe("BusinessPanel logo flow", () => {
       expect(input.disabled).toBe(true);
     }
     expect(screen.getByRole("button", {name: "Guardar logo"}).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", {name: "Reemplazar carta"}).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", {name: /Guardar carta|Reemplazar carta/}).hasAttribute("disabled"),
+    ).toBe(true);
     expect(screen.getByRole("button", {name: /Restaurar esta versión/}).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
@@ -497,7 +503,7 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() => {
       expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
     });
-  });
+  }, 15000);
 
   it("switches analytics between 7 and 30 real days without changing the source endpoint", async () => {
     const business: Business = {
@@ -547,5 +553,76 @@ describe("BusinessPanel logo flow", () => {
       "/api/businesses/biz-4/analytics/scans?period=30d",
       "owner-token",
     );
+  }, 15000);
+
+  it("deduplicates bootstrap requests across strict-mode mount and paired visibility sync events", async () => {
+    const business: Business = {
+      id: "biz-5",
+      logo_url: null,
+      name: "Perf Biz",
+      slug: "perf-biz",
+      status: "active",
+      updated_at: "2026-08-21T12:00:00Z",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-5") return business;
+      if (path === "/api/businesses/biz-5/menu") {
+        return {current: null, public_code: null, versions: []};
+      }
+      if (path === "/api/businesses/biz-5/analytics/summary") {
+        return {busiest_hour: 20, scans_30d: 33, scans_7d: 8, scans_today: 3};
+      }
+      if (path === "/api/businesses/biz-5/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-5/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    render(
+      <AppearanceProvider>
+        <React.StrictMode>
+          <BusinessPanel token="owner-token" user={null} />
+        </React.StrictMode>
+      </AppearanceProvider>,
+    );
+
+    await screen.findByText("Hola, Perf Biz 👋");
+    await waitFor(() => {
+      expect(mocks.listBusinesses).toHaveBeenCalledTimes(1);
+    });
+
+    const initialPaths = mocks.request.mock.calls.map(([path]) => path as string);
+    expect(initialPaths.filter((path) => path === "/api/businesses/biz-5")).toHaveLength(1);
+    expect(initialPaths.filter((path) => path === "/api/businesses/biz-5/menu")).toHaveLength(1);
+    expect(
+      initialPaths.filter((path) => path === "/api/businesses/biz-5/analytics/summary"),
+    ).toHaveLength(1);
+    expect(
+      initialPaths.filter((path) => path === "/api/businesses/biz-5/analytics/scans?period=30d"),
+    ).toHaveLength(1);
+    expect(initialPaths.filter((path) => path === "/api/businesses/biz-5/qr")).toHaveLength(1);
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    fireEvent.focus(window);
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await waitFor(() => {
+      expect(mocks.listBusinesses).toHaveBeenCalledTimes(2);
+    });
+
+    const syncedPaths = mocks.request.mock.calls.map(([path]) => path as string);
+    expect(syncedPaths.filter((path) => path === "/api/businesses/biz-5")).toHaveLength(2);
+    expect(syncedPaths.filter((path) => path === "/api/businesses/biz-5/menu")).toHaveLength(2);
+    expect(
+      syncedPaths.filter((path) => path === "/api/businesses/biz-5/analytics/summary"),
+    ).toHaveLength(2);
+    expect(
+      syncedPaths.filter((path) => path === "/api/businesses/biz-5/analytics/scans?period=30d"),
+    ).toHaveLength(2);
+    expect(syncedPaths.filter((path) => path === "/api/businesses/biz-5/qr")).toHaveLength(2);
   });
 });

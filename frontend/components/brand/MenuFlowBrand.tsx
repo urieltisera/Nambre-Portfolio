@@ -42,11 +42,10 @@ export function MenuFlowBrand({
         <img
           alt={alt}
           aria-hidden={decorative}
-          className="menuflow-brand__asset menuflow-brand__asset--mark"
-          src={markSrc}
+          className="menuflow-brand__asset menuflow-brand__asset--horizontal"
+          src={horizontalSrc}
         />
         <span className="menuflow-brand__admin-copy">
-          <strong>MenuFlow</strong>
           <span>Admin</span>
         </span>
       </span>

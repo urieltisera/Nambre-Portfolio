@@ -27,23 +27,42 @@ export function Sidebar({
   onToggleCollapsed: () => void;
   title: string;
 }) {
+  const collapseLabel = collapsed ? "Expandir sidebar" : "Contraer sidebar";
+
   return (
     <aside className={cn("sidebar", collapsed ? "sidebar--collapsed" : "")}>
-      <div className="sidebar__header">
-        <span className="sidebar__brand" aria-label={title}>
-          <MenuFlowBrand mode={collapsed ? "mark" : "horizontal"} />
-        </span>
-        <Button
-          aria-label={collapsed ? "Expandir sidebar" : "Contraer sidebar"}
-          className="sidebar__collapse"
-          onClick={onToggleCollapsed}
-          data-tooltip={collapsed ? "Expandir sidebar" : undefined}
-          title={collapsed ? "Expandir sidebar" : "Contraer sidebar"}
-          variant="ghost"
-        >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-        </Button>
-      </div>
+      {collapsed ? (
+        <div className="sidebar__header">
+          <span className="sidebar__brand" aria-label={title}>
+            <MenuFlowBrand mode="mark" />
+          </span>
+          <Button
+            aria-label={collapseLabel}
+            className="sidebar__collapse"
+            data-tooltip={collapseLabel}
+            onClick={onToggleCollapsed}
+            title={collapseLabel}
+            variant="ghost"
+          >
+            <PanelLeftOpen size={18} />
+          </Button>
+        </div>
+      ) : (
+        <div className="sidebar__header">
+          <span className="sidebar__brand" aria-label={title}>
+            <MenuFlowBrand mode="horizontal" />
+          </span>
+          <Button
+            aria-label={collapseLabel}
+            className="sidebar__collapse"
+            onClick={onToggleCollapsed}
+            title={collapseLabel}
+            variant="ghost"
+          >
+            <PanelLeftClose size={18} />
+          </Button>
+        </div>
+      )}
       <nav className="sidebar__nav" aria-label="Navegación principal">
         {items.map((item) => (
           <button
@@ -56,7 +75,7 @@ export function Sidebar({
             type="button"
           >
             <span className="sidebar__icon">{item.icon}</span>
-            {!collapsed ? <span>{item.label}</span> : null}
+            {collapsed ? null : <span>{item.label}</span>}
           </button>
         ))}
       </nav>

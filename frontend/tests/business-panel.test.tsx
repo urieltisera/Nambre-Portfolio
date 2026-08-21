@@ -5,6 +5,7 @@ import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-libr
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {BusinessPanel} from "../components/BusinessPanel";
 import {AppearanceProvider} from "../components/ui/AppearanceProvider";
+import {appearancePreferences} from "../lib/appearance-preferences";
 import type {Business, MenuState} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
@@ -37,10 +38,10 @@ afterEach(() => {
 
 function renderPanel(ui: React.ReactElement) {
   localStorage.setItem(
-    "menuflow.appearance",
+    appearancePreferences.keyForUser("owner-1"),
     JSON.stringify({theme: "light", visualStyle: "maximal"}),
   );
-  return render(<AppearanceProvider>{ui}</AppearanceProvider>);
+  return render(<AppearanceProvider userId="owner-1">{ui}</AppearanceProvider>);
 }
 
 describe("BusinessPanel logo flow", () => {

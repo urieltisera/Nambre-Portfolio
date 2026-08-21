@@ -25,7 +25,13 @@ function getSystemTheme(): ResolvedTheme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function AppearanceProvider({children}: {children: React.ReactNode}) {
+export function AppearanceProvider({
+  children,
+  userId = null,
+}: {
+  children: React.ReactNode;
+  userId?: string | null;
+}) {
   const [theme, setTheme] = useState<ThemePreference>(appearancePreferences.defaults.theme);
   const [visualStyle, setVisualStyle] = useState<VisualStyle>(
     appearancePreferences.defaults.visualStyle,
@@ -34,12 +40,12 @@ export function AppearanceProvider({children}: {children: React.ReactNode}) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const stored = appearancePreferences.load();
+    const stored = appearancePreferences.load(userId);
     setTheme(stored.theme);
     setVisualStyle(stored.visualStyle);
     setResolvedTheme(stored.theme === "system" ? getSystemTheme() : stored.theme);
     setHydrated(true);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -66,8 +72,8 @@ export function AppearanceProvider({children}: {children: React.ReactNode}) {
     document.documentElement.dataset.themePreference = theme;
     document.documentElement.dataset.visualStyle = visualStyle;
     if (!hydrated) return;
-    appearancePreferences.save({theme, visualStyle});
-  }, [hydrated, resolvedTheme, theme, visualStyle]);
+    appearancePreferences.save(userId, {theme, visualStyle});
+  }, [hydrated, resolvedTheme, theme, userId, visualStyle]);
 
   const value = useMemo(
     () => ({

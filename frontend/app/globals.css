@@ -557,6 +557,7 @@ select:focus-visible,
 .sidebar--collapsed {
   width: var(--sidebar-collapsed-width);
   gap: 0.85rem;
+  justify-items: center;
 }
 
 .sidebar__header {
@@ -630,6 +631,7 @@ select:focus-visible,
 
 .sidebar--collapsed .sidebar__header {
   display: grid;
+  width: 100%;
   justify-items: center;
   align-content: start;
   gap: 0.65rem;
@@ -638,7 +640,6 @@ select:focus-visible,
 .sidebar--collapsed .sidebar__brand,
 .sidebar--collapsed .sidebar__collapse {
   justify-content: center;
-  width: 100%;
 }
 
 .sidebar--collapsed .sidebar__link {
@@ -652,11 +653,14 @@ select:focus-visible,
 }
 
 .sidebar--collapsed .sidebar__nav {
+  width: 100%;
+  display: grid;
   justify-items: center;
+  align-content: start;
 }
 
 .sidebar--collapsed .sidebar__brand {
-  overflow: hidden;
+  width: auto;
 }
 
 .sidebar--collapsed .sidebar__icon {
@@ -704,6 +708,10 @@ select:focus-visible,
 .sidebar--collapsed .sidebar__bottom {
   display: grid;
   justify-items: center;
+  width: 100%;
+}
+
+.sidebar--collapsed .sidebar__bottom > * {
   width: 100%;
 }
 

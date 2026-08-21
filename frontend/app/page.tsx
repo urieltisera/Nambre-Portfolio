@@ -6,6 +6,7 @@ import {AdminPanel} from "@/components/AdminPanel";
 import {BusinessPanel} from "@/components/BusinessPanel";
 import {LoginForm} from "@/components/LoginForm";
 import {Alert} from "@/components/ui/Alert";
+import {AppearanceProvider} from "@/components/ui/AppearanceProvider";
 import {Button} from "@/components/ui/Button";
 import {canAccessAdmin, currentUser, logout, User} from "@/lib/api";
 
@@ -49,21 +50,21 @@ export default function Page() {
 
   if (!token) {
     return (
-      <>
+      <AppearanceProvider key="guest">
         <LoginForm onToken={handleToken} />
         {error ? (
           <main className="page-frame page-frame--narrow">
             <Alert tone="danger">{error}</Alert>
           </main>
         ) : null}
-      </>
+      </AppearanceProvider>
     );
   }
 
   const canAdmin = canAccessAdmin(user);
 
   return (
-    <>
+    <AppearanceProvider key={user?.id ?? "guest"} userId={user?.id ?? null}>
       {canAdmin ? (
         <div className="mode-switch">
           <div className="mode-switch__group">
@@ -96,6 +97,6 @@ export default function Page() {
           user={user}
         />
       )}
-    </>
+    </AppearanceProvider>
   );
 }

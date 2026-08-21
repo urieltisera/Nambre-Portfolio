@@ -5,7 +5,8 @@ import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-libr
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {LoginForm} from "../components/auth/LoginForm";
 import {BusinessPanel} from "../components/BusinessPanel";
-import {AppearanceProvider} from "../components/ui/AppearanceProvider";
+import {AppearanceProvider, useAppearance} from "../components/ui/AppearanceProvider";
+import {appearancePreferences, LEGACY_STORAGE_KEY} from "../lib/appearance-preferences";
 import type {Business, User} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +34,21 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+function AppearanceHarness() {
+  const {setVisualStyle, visualStyle} = useAppearance();
+  return (
+    <div>
+      <p data-testid="appearance-value">{visualStyle}</p>
+      <button onClick={() => setVisualStyle("minimal")} type="button">
+        Minimal
+      </button>
+      <button onClick={() => setVisualStyle("maximal")} type="button">
+        Maximal
+      </button>
+    </div>
+  );
+}
 
 function stubMatchMedia(matches = false) {
   vi.stubGlobal("matchMedia", vi.fn(() => ({
@@ -126,7 +142,7 @@ describe("Owner shell", () => {
     });
 
     render(
-      <AppearanceProvider>
+      <AppearanceProvider userId={user.id}>
         <BusinessPanel onLogout={vi.fn()} token="owner-token" user={user} />
       </AppearanceProvider>,
     );
@@ -150,8 +166,9 @@ describe("Owner shell", () => {
       expect(document.documentElement.dataset.visualStyle).toBe("maximal");
     });
 
-    expect(localStorage.getItem("menuflow.appearance")).toContain("\"theme\":\"dark\"");
-    expect(localStorage.getItem("menuflow.appearance")).toContain("\"visualStyle\":\"maximal\"");
+    const stored = localStorage.getItem(appearancePreferences.keyForUser(user.id));
+    expect(stored).toContain("\"theme\":\"dark\"");
+    expect(stored).toContain("\"visualStyle\":\"maximal\"");
 
     fireEvent.click(screen.getByRole("button", {name: "Administrar negocio"}));
     await screen.findByRole("heading", {name: "Mi negocio"});
@@ -188,7 +205,7 @@ describe("Owner shell", () => {
     });
 
     const {container} = render(
-      <AppearanceProvider>
+      <AppearanceProvider userId={user.id}>
         <BusinessPanel onLogout={vi.fn()} token="owner-token" user={user} />
       </AppearanceProvider>,
     );
@@ -253,7 +270,7 @@ describe("Owner shell", () => {
     });
 
     render(
-      <AppearanceProvider>
+      <AppearanceProvider userId={user.id}>
         <BusinessPanel onLogout={vi.fn()} token="owner-token" user={user} />
       </AppearanceProvider>,
     );
@@ -272,6 +289,64 @@ describe("Owner shell", () => {
       expect(screen.getByTestId("dashboard-layout-maximal")).toBeTruthy();
     });
     expect(screen.getByText("Resumen rápido")).toBeTruthy();
-    expect(localStorage.getItem("menuflow.appearance")).toContain("\"visualStyle\":\"maximal\"");
+    expect(localStorage.getItem(appearancePreferences.keyForUser(user.id))).toContain(
+      "\"visualStyle\":\"maximal\"",
+    );
   }, 15000);
+
+  it("isolates appearance preferences per user id and ignores the legacy global key", async () => {
+    stubMatchMedia(false);
+    localStorage.setItem(
+      LEGACY_STORAGE_KEY,
+      JSON.stringify({theme: "dark", visualStyle: "maximal"}),
+    );
+    localStorage.setItem(
+      appearancePreferences.keyForUser("owner-b"),
+      JSON.stringify({theme: "light", visualStyle: "maximal"}),
+    );
+
+    const ownerA = render(
+      <AppearanceProvider key="owner-a" userId="owner-a">
+        <AppearanceHarness />
+      </AppearanceProvider>,
+    );
+    expect(screen.getByTestId("appearance-value").textContent).toBe("minimal");
+    fireEvent.click(screen.getByRole("button", {name: "Minimal"}));
+    await waitFor(() => {
+      expect(localStorage.getItem(appearancePreferences.keyForUser("owner-a"))).toContain(
+        "\"visualStyle\":\"minimal\"",
+      );
+    });
+    ownerA.unmount();
+
+    const ownerB = render(
+      <AppearanceProvider key="owner-b" userId="owner-b">
+        <AppearanceHarness />
+      </AppearanceProvider>,
+    );
+    expect(screen.getByTestId("appearance-value").textContent).toBe("maximal");
+    fireEvent.click(screen.getByRole("button", {name: "Maximal"}));
+    await waitFor(() => {
+      expect(localStorage.getItem(appearancePreferences.keyForUser("owner-b"))).toContain(
+        "\"visualStyle\":\"maximal\"",
+      );
+    });
+    ownerB.unmount();
+
+    const admin = render(
+      <AppearanceProvider key="admin-1" userId="admin-1">
+        <AppearanceHarness />
+      </AppearanceProvider>,
+    );
+    expect(screen.getByTestId("appearance-value").textContent).toBe("minimal");
+    admin.unmount();
+
+    render(
+      <AppearanceProvider key="owner-a-return" userId="owner-a">
+        <AppearanceHarness />
+      </AppearanceProvider>,
+    );
+    expect(screen.getByTestId("appearance-value").textContent).toBe("minimal");
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toContain("\"visualStyle\":\"maximal\"");
+  });
 });

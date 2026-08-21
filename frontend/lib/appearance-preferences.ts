@@ -6,7 +6,8 @@ export type AppearancePreferenceState = {
   visualStyle: VisualStyle;
 };
 
-const STORAGE_KEY = "menuflow.appearance";
+export const LEGACY_STORAGE_KEY = "menuflow.appearance";
+const STORAGE_KEY_PREFIX = "menuflow:appearance:";
 
 const defaults: AppearancePreferenceState = {
   theme: "system",
@@ -23,10 +24,14 @@ function isVisualStyle(value: unknown): value is VisualStyle {
 
 export const appearancePreferences = {
   defaults,
-  load(): AppearancePreferenceState {
+  keyForUser(userId: string): string {
+    return `${STORAGE_KEY_PREFIX}${userId}`;
+  },
+  load(userId?: string | null): AppearancePreferenceState {
     if (typeof window === "undefined") return defaults;
+    if (!userId) return defaults;
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.localStorage.getItem(this.keyForUser(userId));
       if (!raw) return defaults;
       const parsed = JSON.parse(raw) as Partial<AppearancePreferenceState>;
       return {
@@ -37,8 +42,9 @@ export const appearancePreferences = {
       return defaults;
     }
   },
-  save(preferences: AppearancePreferenceState): void {
+  save(userId: string | null | undefined, preferences: AppearancePreferenceState): void {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+    if (!userId) return;
+    window.localStorage.setItem(this.keyForUser(userId), JSON.stringify(preferences));
   },
 };

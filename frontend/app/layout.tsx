@@ -1,6 +1,5 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import {AppearanceProvider} from "@/components/ui/AppearanceProvider";
 
 export const metadata: Metadata = {
   title: "MenuFlow",
@@ -14,9 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body>
-        <AppearanceProvider>{children}</AppearanceProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

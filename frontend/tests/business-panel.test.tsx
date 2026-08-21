@@ -344,7 +344,7 @@ describe("BusinessPanel logo flow", () => {
     expect(
       screen.getByRole("button", {name: /Guardar carta|Reemplazar carta/}).hasAttribute("disabled"),
     ).toBe(true);
-    expect(screen.getByRole("button", {name: /Restaurar esta versión/}).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", {name: /Restaurar/}).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
     expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(true);
@@ -499,7 +499,7 @@ describe("BusinessPanel logo flow", () => {
       expect(screen.getByText(/Última actualización: 21\/8\/2026/)).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", {name: /Restaurar esta versión/}));
+    fireEvent.click(screen.getByRole("button", {name: /Restaurar/}));
 
     await waitFor(() => {
       expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();

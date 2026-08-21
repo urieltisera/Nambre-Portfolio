@@ -281,13 +281,20 @@ describe("Owner shell", () => {
     expect(within(sidebar).queryByText("Activo")).toBeNull();
     expect(within(sidebar).getByRole("button", {name: "Inicio"})).toBeTruthy();
     expect(within(sidebar).getByRole("button", {name: "Cerrar sesión"})).toBeTruthy();
-    const collapsedBrand = within(sidebar).getByAltText("Nambre") as HTMLImageElement;
+    expect(sidebar.querySelector(".sidebar__collapse")).toBeNull();
+    const expandTrigger = within(sidebar).getByRole("button", {name: "Expandir sidebar"});
+    expect(expandTrigger.className).toContain("sidebar__brand-trigger");
+    const collapsedBrand = expandTrigger.querySelector("img");
+    if (!(collapsedBrand instanceof HTMLImageElement)) {
+      throw new Error("Collapsed sidebar mark not found");
+    }
     expect(collapsedBrand.getAttribute("src")).toContain("/brand/isotype-teal.svg");
     expect(within(sidebar).getByRole("button", {name: "Inicio"}).className).toContain("is-active");
 
-    fireEvent.click(screen.getByRole("button", {name: "Expandir sidebar"}));
+    fireEvent.click(expandTrigger);
     expect(within(sidebar).getByText("Mi carta")).toBeTruthy();
     expect(within(sidebar).getByText("Bar Central")).toBeTruthy();
+    expect(within(sidebar).getByRole("button", {name: "Contraer sidebar"})).toBeTruthy();
   });
 
   it("switches between minimal and maximal layouts and persists the visible change", async () => {

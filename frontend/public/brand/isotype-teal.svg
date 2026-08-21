@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <!-- Technical reconstruction from the approved visual reference, not an official master export. -->
-  <g stroke="#087F7B" stroke-linecap="round" stroke-linejoin="round" stroke-width="8.5">
-    <path d="M23 78V18L73 71V18" />
-    <path d="M40 43L60 63" />
+  <g stroke="#087F7B" stroke-linecap="round" stroke-linejoin="round" stroke-width="5.75">
+    <path d="M16 51V13.25L46.5 45.75V12.5" />
+    <path d="M27.5 29.5L38 40" />
   </g>
 </svg>

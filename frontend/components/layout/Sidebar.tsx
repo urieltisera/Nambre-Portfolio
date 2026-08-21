@@ -1,5 +1,5 @@
 import React from "react";
-import {PanelLeftClose, PanelLeftOpen} from "lucide-react";
+import {PanelLeftClose} from "lucide-react";
 import {NambreBrand} from "@/components/brand/NambreBrand";
 import {Button} from "@/components/ui/Button";
 import {cn} from "@/lib/cn";
@@ -33,19 +33,16 @@ export function Sidebar({
     <aside className={cn("sidebar", collapsed ? "sidebar--collapsed" : "")}>
       {collapsed ? (
         <div className="sidebar__header">
-          <span className="sidebar__brand" aria-label={title}>
-            <NambreBrand mode="mark" />
-          </span>
-          <Button
+          <button
             aria-label={collapseLabel}
-            className="sidebar__collapse"
+            className="sidebar__brand-trigger"
             data-tooltip={collapseLabel}
             onClick={onToggleCollapsed}
             title={collapseLabel}
-            variant="ghost"
+            type="button"
           >
-            <PanelLeftOpen size={18} />
-          </Button>
+            <NambreBrand decorative mode="mark" />
+          </button>
         </div>
       ) : (
         <div className="sidebar__header">

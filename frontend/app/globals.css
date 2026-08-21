@@ -656,6 +656,27 @@ select:focus-visible,
   min-width: 0;
 }
 
+.sidebar__brand-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.sidebar__brand-trigger:hover,
+.sidebar__brand-trigger:focus-visible {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
 .sidebar__collapse {
   padding: 0;
   min-width: 42px;
@@ -720,7 +741,7 @@ select:focus-visible,
 }
 
 .sidebar--collapsed .sidebar__brand,
-.sidebar--collapsed .sidebar__collapse {
+.sidebar--collapsed .sidebar__brand-trigger {
   justify-content: center;
 }
 
@@ -739,10 +760,6 @@ select:focus-visible,
   display: grid;
   justify-items: center;
   align-content: start;
-}
-
-.sidebar--collapsed .sidebar__brand {
-  width: auto;
 }
 
 .sidebar--collapsed .sidebar__icon {
@@ -799,7 +816,7 @@ select:focus-visible,
 }
 
 .sidebar--collapsed .sidebar__link[data-tooltip]::after,
-.sidebar--collapsed .sidebar__collapse[data-tooltip]::after,
+.sidebar--collapsed .sidebar__brand-trigger[data-tooltip]::after,
 .sidebar-summary--collapsed [data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
@@ -822,8 +839,8 @@ select:focus-visible,
 
 .sidebar--collapsed .sidebar__link[data-tooltip]:hover::after,
 .sidebar--collapsed .sidebar__link[data-tooltip]:focus-visible::after,
-.sidebar--collapsed .sidebar__collapse[data-tooltip]:hover::after,
-.sidebar--collapsed .sidebar__collapse[data-tooltip]:focus-visible::after,
+.sidebar--collapsed .sidebar__brand-trigger[data-tooltip]:hover::after,
+.sidebar--collapsed .sidebar__brand-trigger[data-tooltip]:focus-visible::after,
 .sidebar-summary--collapsed [data-tooltip]:hover::after,
 .sidebar-summary--collapsed [data-tooltip]:focus-visible::after {
   opacity: 1;

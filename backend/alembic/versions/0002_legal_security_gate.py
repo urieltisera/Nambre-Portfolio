@@ -18,13 +18,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "memberships",
-        "role",
-        existing_type=sa.Enum("owner", "manager", name="membershiprole"),
-        type_=sa.Enum("owner", "manager", "staff", name="membershiprole"),
-        existing_nullable=False,
-    )
+    with op.batch_alter_table("memberships", recreate="auto") as batch_op:
+        batch_op.alter_column(
+            "role",
+            existing_type=sa.Enum("owner", "manager", name="membershiprole"),
+            type_=sa.Enum("owner", "manager", "staff", name="membershiprole"),
+            existing_nullable=False,
+        )
     op.create_table(
         "legal_acceptances",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -52,13 +52,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["business_id"], ["businesses.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "user_id",
-            "business_id",
-            "document_type",
-            "document_version",
-            name="uq_legal_acceptance_version",
-        ),
     )
     op.create_index(
         op.f("ix_legal_acceptances_user_id"), "legal_acceptances", ["user_id"], unique=False
@@ -74,6 +67,22 @@ def upgrade() -> None:
         "legal_acceptances",
         ["document_type"],
         unique=False,
+    )
+    op.create_index(
+        "uq_legal_acceptance_global_version",
+        "legal_acceptances",
+        ["user_id", "document_type", "document_version"],
+        unique=True,
+        sqlite_where=sa.text("business_id IS NULL"),
+        postgresql_where=sa.text("business_id IS NULL"),
+    )
+    op.create_index(
+        "uq_legal_acceptance_business_version",
+        "legal_acceptances",
+        ["user_id", "business_id", "document_type", "document_version"],
+        unique=True,
+        sqlite_where=sa.text("business_id IS NOT NULL"),
+        postgresql_where=sa.text("business_id IS NOT NULL"),
     )
     op.create_table(
         "user_sessions",
@@ -119,13 +128,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("uq_legal_acceptance_business_version", table_name="legal_acceptances")
+    op.drop_index("uq_legal_acceptance_global_version", table_name="legal_acceptances")
     op.drop_table("audit_events")
     op.drop_table("user_sessions")
     op.drop_table("legal_acceptances")
-    op.alter_column(
-        "memberships",
-        "role",
-        existing_type=sa.Enum("owner", "manager", "staff", name="membershiprole"),
-        type_=sa.Enum("owner", "manager", name="membershiprole"),
-        existing_nullable=False,
-    )
+    with op.batch_alter_table("memberships", recreate="auto") as batch_op:
+        batch_op.alter_column(
+            "role",
+            existing_type=sa.Enum("owner", "manager", "staff", name="membershiprole"),
+            type_=sa.Enum("owner", "manager", name="membershiprole"),
+            existing_nullable=False,
+        )

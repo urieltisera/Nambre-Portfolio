@@ -73,7 +73,7 @@ def get_current_auth(
         )
     session_id = payload.get("sid")
     if session_id is None:
-        return AuthContext(user=user, session=None)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
     session = db.get(UserSession, session_id)
     if session is None or session.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")

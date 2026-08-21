@@ -142,7 +142,8 @@ def logout(
 
 
 @router.get("/api/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)) -> User:
+def me(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
+    _enforce_legal_acceptance(db, user)
     return user
 
 
@@ -181,6 +182,7 @@ def accept_legal(
 def my_businesses(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[Business]:
+    _enforce_legal_acceptance(db, user)
     if user.is_platform_admin:
         return _list_all_businesses(db)
     return list(

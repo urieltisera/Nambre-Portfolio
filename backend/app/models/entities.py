@@ -2,7 +2,18 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -178,12 +189,24 @@ class ScanEvent(Base):
 class LegalAcceptance(Base):
     __tablename__ = "legal_acceptances"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_legal_acceptance_global_version",
+            "user_id",
+            "document_type",
+            "document_version",
+            unique=True,
+            sqlite_where=text("business_id IS NULL"),
+            postgresql_where=text("business_id IS NULL"),
+        ),
+        Index(
+            "uq_legal_acceptance_business_version",
             "user_id",
             "business_id",
             "document_type",
             "document_version",
-            name="uq_legal_acceptance_version",
+            unique=True,
+            sqlite_where=text("business_id IS NOT NULL"),
+            postgresql_where=text("business_id IS NOT NULL"),
         ),
     )
 

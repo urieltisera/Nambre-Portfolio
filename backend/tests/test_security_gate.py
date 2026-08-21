@@ -1,9 +1,12 @@
 from io import BytesIO
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
+    AcceptanceMethod,
     AuditEvent,
     BusinessStatus,
     DestinationType,
@@ -14,7 +17,14 @@ from app.models import (
     QRCode,
     UserSession,
 )
-from tests.conftest import add_membership, auth_headers, make_business, make_user
+from tests.conftest import (
+    add_membership,
+    auth_headers,
+    legacy_auth_headers,
+    make_business,
+    make_user,
+    unaccepted_auth_headers,
+)
 
 PDF_V1 = b"%PDF-1.4\n%v1\n%%EOF\n"
 
@@ -122,6 +132,61 @@ def test_logout_revokes_login_session_and_audits_it(client, db: Session) -> None
     assert event_types.count("legal.accepted") == 5
 
 
+def test_revoked_session_cannot_be_reused(client, db: Session) -> None:
+    user = make_user(db, "revoked@example.com", password="revoked-pass-123")
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "revoked@example.com",
+            "password": "revoked-pass-123",
+        },
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    assert session is not None
+    session.revoked_at = session.issued_at
+    session.revoke_reason = "security-review"
+    db.commit()
+
+    reused = client.get("/api/me", headers=headers)
+    assert reused.status_code == 401
+    assert reused.json()["detail"] == "Session expired"
+
+
+def test_suspended_user_loses_access_even_with_existing_session(client, db: Session) -> None:
+    user = make_user(db, "suspended-user@example.com", password="suspended-pass-123")
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "suspended-user@example.com",
+            "password": "suspended-pass-123",
+        },
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    user.is_active = False
+    db.commit()
+
+    blocked = client.get("/api/me", headers=headers)
+    assert blocked.status_code == 401
+    assert blocked.json()["detail"] == "Inactive or missing user"
+
+
+def test_legacy_token_cannot_bypass_session_revocation_policy(client, db: Session) -> None:
+    user = make_user(db, "legacy@example.com")
+
+    me = client.get("/api/me", headers=legacy_auth_headers(user))
+    assert me.status_code == 401
+    assert me.json()["detail"] == "Invalid session"
+
+
 def test_staff_can_view_but_cannot_mutate_sensitive_resources(client, db: Session) -> None:
     owner = make_user(db, "owner-staff@example.com")
     staff = make_user(db, "staff@example.com")
@@ -179,6 +244,43 @@ def test_staff_can_view_but_cannot_mutate_sensitive_resources(client, db: Sessio
         ).status_code
         == 403
     )
+
+
+def test_manager_cannot_edit_logo_or_rollback_menu(client, db: Session) -> None:
+    owner = make_user(db, "owner-manager@example.com")
+    manager = make_user(db, "manager-sensitive@example.com")
+    business = make_business(db, "Manager Biz", "manager-biz", BusinessStatus.active)
+    add_membership(db, owner, business, MembershipRole.owner)
+    add_membership(db, manager, business, MembershipRole.manager)
+
+    upload = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files={"file": ("menu.pdf", BytesIO(PDF_V1), "application/pdf")},
+    )
+    assert upload.status_code == 200
+    menu_asset_id = upload.json()["current"]["id"]
+
+    blocked_patch = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(manager),
+        json={"name": "Escalated by manager"},
+    )
+    assert blocked_patch.status_code == 403
+
+    blocked_logo = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(manager),
+        files={"file": ("logo.png", BytesIO(b"fake"), "image/png")},
+    )
+    assert blocked_logo.status_code == 403
+
+    blocked_rollback = client.post(
+        f"/api/businesses/{business.id}/menu/rollback",
+        headers=auth_headers(manager),
+        json={"menu_asset_id": menu_asset_id},
+    )
+    assert blocked_rollback.status_code == 403
 
 
 def test_cross_tenant_qr_asset_download_is_forbidden(client, db: Session) -> None:
@@ -259,6 +361,39 @@ def test_legal_gate_blocks_admin_endpoints_but_keeps_accept_and_logout_available
     assert client.post("/auth/logout", headers=headers).status_code == 204
 
 
+def test_legal_gate_blocks_direct_api_access_except_status_accept_and_logout(
+    client, db: Session
+) -> None:
+    user = make_user(db, "gate-owner@example.com", password="gate-owner-pass")
+    business = make_business(db, "Gate Biz", "gate-biz")
+    add_membership(db, user, business, MembershipRole.owner)
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "gate-owner@example.com",
+            "password": "gate-owner-pass",
+        },
+    )
+    assert login.status_code == 403
+
+    pending_user = make_user(db, "gate-owner-2@example.com")
+    add_membership(db, pending_user, business, MembershipRole.owner)
+    gated_headers = unaccepted_auth_headers(pending_user)
+
+    assert client.get("/api/me", headers=gated_headers).status_code == 403
+    assert client.get("/api/me/businesses", headers=gated_headers).status_code == 403
+    assert client.get(f"/api/businesses/{business.id}", headers=gated_headers).status_code == 403
+
+    transition_user = make_user(db, "gate-owner-3@example.com")
+    add_membership(db, transition_user, business, MembershipRole.owner)
+    transition_headers = unaccepted_auth_headers(transition_user)
+
+    assert client.get("/api/legal/status", headers=transition_headers).status_code == 200
+    assert client.post("/api/legal/accept", headers=transition_headers, json={}).status_code == 200
+    assert client.post("/auth/logout", headers=transition_headers).status_code == 204
+
+
 def test_qr_generation_does_not_create_artistic_records_without_real_validation(
     client, db: Session
 ) -> None:
@@ -284,3 +419,54 @@ def test_qr_generation_does_not_create_artistic_records_without_real_validation(
 
     records = db.scalars(select(QRCode).where(QRCode.business_id == business.id)).all()
     assert all(record.qr_type.value != "artistic" for record in records)
+
+
+def test_legal_acceptance_global_version_is_db_unique(client, db: Session) -> None:
+    user = make_user(db, "dup-legal@example.com")
+
+    first = LegalAcceptance(
+        user_id=user.id,
+        business_id=None,
+        document_type=LegalDocumentType.terms,
+        document_version="2026-08-21",
+        acceptance_method=AcceptanceMethod.seeded,
+    )
+    second = LegalAcceptance(
+        user_id=user.id,
+        business_id=None,
+        document_type=LegalDocumentType.terms,
+        document_version="2026-08-21",
+        acceptance_method=AcceptanceMethod.ui_checkbox,
+    )
+    db.add(first)
+    db.commit()
+
+    db.add(second)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_audit_events_store_actor_scope_and_sanitized_details(client, db: Session) -> None:
+    admin = make_user(db, "audit-admin@example.com", admin=True)
+    business = make_business(db, "Audit Biz", "audit-biz")
+
+    response = client.patch(
+        f"/admin/businesses/{business.id}",
+        headers=auth_headers(admin),
+        json={"status": "suspended"},
+    )
+    assert response.status_code == 200
+
+    event = db.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.event_type == "business.status_changed")
+        .order_by(AuditEvent.occurred_at.desc())
+    )
+    assert event is not None
+    assert event.actor_user_id == admin.id
+    assert event.business_id == business.id
+    assert event.occurred_at is not None
+    assert event.details_json is not None
+    for secret_fragment in ("password", "Bearer ", "eyJ", "token", "secret", "api_key"):
+        assert secret_fragment not in event.details_json

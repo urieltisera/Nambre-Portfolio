@@ -14,7 +14,7 @@ os.environ["STORAGE_PATH"] = tempfile.mkdtemp(prefix="menuflow-tests-")
 os.environ["PUBLIC_BASE_URL"] = "https://menu.example.test"
 os.environ["APP_TIMEZONE"] = "America/Argentina/Buenos_Aires"
 
-from app.auth.security import create_access_token, hash_password  # noqa: E402
+from app.auth.security import create_access_token, create_user_session, hash_password  # noqa: E402
 from app.db import Base, get_db  # noqa: E402
 from app.legal import CURRENT_LEGAL_VERSIONS  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -88,29 +88,44 @@ def add_membership(db: Session, user: User, business: Business, role: Membership
     return membership
 
 
-def auth_headers(user: User) -> dict[str, str]:
+def _session_auth_headers(user: User, *, seed_legal: bool) -> dict[str, str]:
     session = object_session(user)
     if session is not None:
-        for document_type, document_version in CURRENT_LEGAL_VERSIONS.items():
-            exists = (
-                session.query(LegalAcceptance)
-                .filter_by(
-                    user_id=user.id,
-                    business_id=None,
-                    document_type=document_type,
-                    document_version=document_version,
-                )
-                .first()
-            )
-            if exists is None:
-                session.add(
-                    LegalAcceptance(
+        if seed_legal:
+            for document_type, document_version in CURRENT_LEGAL_VERSIONS.items():
+                exists = (
+                    session.query(LegalAcceptance)
+                    .filter_by(
                         user_id=user.id,
                         business_id=None,
                         document_type=document_type,
                         document_version=document_version,
-                        acceptance_method=AcceptanceMethod.seeded,
                     )
+                    .first()
                 )
+                if exists is None:
+                    session.add(
+                        LegalAcceptance(
+                            user_id=user.id,
+                            business_id=None,
+                            document_type=document_type,
+                            document_version=document_version,
+                            acceptance_method=AcceptanceMethod.seeded,
+                        )
+                    )
+        user_session = create_user_session(session, user)
         session.commit()
+        return {"Authorization": f"Bearer {create_access_token(user, user_session)}"}
+    raise RuntimeError("User must be attached to a session before creating auth headers")
+
+
+def auth_headers(user: User) -> dict[str, str]:
+    return _session_auth_headers(user, seed_legal=True)
+
+
+def unaccepted_auth_headers(user: User) -> dict[str, str]:
+    return _session_auth_headers(user, seed_legal=False)
+
+
+def legacy_auth_headers(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token(user)}"}

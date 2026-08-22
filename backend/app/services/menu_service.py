@@ -16,6 +16,7 @@ from app.models import (
 from app.storage.local import LocalStorage
 
 ALLOWED_PDF_TYPES = {"application/pdf"}
+PDF_SIGNATURE = b"%PDF-"
 
 
 def get_active_menu(db: Session, business_id: str) -> MenuAsset | None:
@@ -66,10 +67,19 @@ async def upload_menu_pdf(
         suffix = ".pdf"
     key = storage.build_key(business_id, suffix)
     size = await storage.save_upload(file, key)
+    if size == 0:
+        storage.open(key).unlink(missing_ok=True)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF file is empty")
     if size > settings.max_pdf_bytes:
         storage.open(key).unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="PDF too large"
+        )
+    if not storage.starts_with(key, PDF_SIGNATURE):
+        storage.open(key).unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is not a valid PDF",
         )
 
     current = get_active_menu(db, business_id)

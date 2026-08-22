@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +26,16 @@ class Settings(BaseSettings):
         r")(?::\d+)?$"
     )
     login_rate_limit_per_minute: int = 5
+
+    @model_validator(mode="after")
+    def validate_security_defaults(self) -> "Settings":
+        insecure_secrets = {
+            "change-me-local-only",
+            "replace-with-a-long-random-secret",
+        }
+        if self.environment not in {"local", "test"} and self.secret_key in insecure_secrets:
+            raise ValueError("SECRET_KEY must be overridden outside local/test environments")
+        return self
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

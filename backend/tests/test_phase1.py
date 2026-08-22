@@ -39,9 +39,6 @@ from tests.conftest import add_membership, auth_headers, make_business, make_use
 
 PDF_V1 = b"%PDF-1.4\n%v1\n%%EOF\n"
 PDF_V2 = b"%PDF-1.4\n%v2\n%%EOF\n"
-PNG_LOGO = b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
-)
 
 
 def pdf_file(content: bytes, name: str = "menu.pdf") -> tuple[str, tuple[str, BytesIO, str]]:
@@ -54,16 +51,19 @@ def png_logo_bytes(color: tuple[int, int, int, int] = (255, 0, 0, 255)) -> bytes
     return buffer.getvalue()
 
 
+PNG_LOGO = png_logo_bytes()
+
+
 def assert_dynamic_menu_cache_headers(response) -> None:
     assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["expires"] == "0"
 
 
-def assert_menu_redirect_location(location: str, public_code: str, expected_asset_id: str) -> None:
+def assert_menu_redirect_location(location: str, public_code: str) -> None:
     parsed = urlparse(location)
     assert parsed.path == f"/m/{public_code}/menu.pdf"
-    assert parse_qs(parsed.query) == {"v": [expected_asset_id]}
+    assert parse_qs(parsed.query) == {}
 
 
 def image_center_pixel(png_bytes: bytes) -> tuple[int, int, int, int]:
@@ -395,7 +395,7 @@ def test_dynamic_link_redirect_suspension_and_stable_code(client, db: Session) -
     code = link.public_code
     response = client.get(f"/r/{code}", headers={"User-Agent": "Mobile Safari"})
     assert response.status_code == 302
-    assert_menu_redirect_location(response.headers["location"], code, link.destination_id)
+    assert_menu_redirect_location(response.headers["location"], code)
     assert_dynamic_menu_cache_headers(response)
     menu_response = client.get(response.headers["location"])
     assert menu_response.status_code == 200
@@ -755,7 +755,7 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     assert link is not None
     code = link.public_code
     first_redirect = client.get(f"/r/{code}")
-    assert_menu_redirect_location(first_redirect.headers["location"], code, link.destination_id)
+    assert_menu_redirect_location(first_redirect.headers["location"], code)
     assert b"%v1" in client.get(first_redirect.headers["location"]).content
 
     forbidden = client.post(
@@ -776,7 +776,7 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     assert link.public_code == code
     second_redirect = client.get(f"/r/{code}")
     assert second_redirect.status_code == 302
-    assert_menu_redirect_location(second_redirect.headers["location"], code, link.destination_id)
+    assert_menu_redirect_location(second_redirect.headers["location"], code)
     assert b"%v2" in client.get(second_redirect.headers["location"]).content
 
     analytics = client.get(
@@ -796,7 +796,7 @@ def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db:
     assert link.public_code == code
     rollback_redirect = client.get(f"/r/{code}")
     assert rollback_redirect.status_code == 302
-    assert_menu_redirect_location(rollback_redirect.headers["location"], code, link.destination_id)
+    assert_menu_redirect_location(rollback_redirect.headers["location"], code)
     assert b"%v1" in client.get(rollback_redirect.headers["location"]).content
 
 
@@ -818,7 +818,7 @@ def test_public_menu_url_serves_current_asset_with_no_store_headers(client, db: 
 
     redirect_v1 = client.get(f"/r/{code}")
     assert redirect_v1.status_code == 302
-    assert_menu_redirect_location(redirect_v1.headers["location"], code, first_asset_id)
+    assert_menu_redirect_location(redirect_v1.headers["location"], code)
     assert_dynamic_menu_cache_headers(redirect_v1)
     menu_v1 = client.get(redirect_v1.headers["location"])
     assert menu_v1.status_code == 200
@@ -840,8 +840,8 @@ def test_public_menu_url_serves_current_asset_with_no_store_headers(client, db: 
 
     redirect_v2 = client.get(f"/r/{code}")
     assert redirect_v2.status_code == 302
-    assert redirect_v2.headers["location"] != redirect_v1.headers["location"]
-    assert_menu_redirect_location(redirect_v2.headers["location"], code, second_asset_id)
+    assert redirect_v2.headers["location"] == redirect_v1.headers["location"]
+    assert_menu_redirect_location(redirect_v2.headers["location"], code)
     menu_v2 = client.get(redirect_v2.headers["location"])
     assert menu_v2.status_code == 200
     assert menu_v2.content == PDF_V2
@@ -869,8 +869,8 @@ def test_public_menu_url_serves_current_asset_with_no_store_headers(client, db: 
 
     redirect_v1_again = client.get(f"/r/{code}")
     assert redirect_v1_again.status_code == 302
-    assert redirect_v1_again.headers["location"] != redirect_v2.headers["location"]
-    assert_menu_redirect_location(redirect_v1_again.headers["location"], code, first_asset_id)
+    assert redirect_v1_again.headers["location"] == redirect_v2.headers["location"]
+    assert_menu_redirect_location(redirect_v1_again.headers["location"], code)
     menu_v1_again = client.get(redirect_v1_again.headers["location"])
     assert menu_v1_again.status_code == 200
     assert menu_v1_again.content == PDF_V1

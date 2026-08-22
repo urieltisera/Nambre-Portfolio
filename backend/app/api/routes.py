@@ -2,10 +2,21 @@ from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from os import PathLike
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -83,8 +94,8 @@ def health() -> dict[str, str]:
 
 
 @router.post("/auth/login", response_model=TokenOut)
-def login(payload: LoginIn, db: Session = Depends(get_db)) -> TokenOut:
-    _check_login_rate(payload.email)
+def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)) -> TokenOut:
+    _check_login_rate(payload.email, request)
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if (
         user is None
@@ -253,6 +264,12 @@ async def upload_logo(
     if size > 2 * 1024 * 1024:
         storage.open(key).unlink(missing_ok=True)
         raise HTTPException(status_code=413, detail="Logo too large")
+    try:
+        with Image.open(storage.open(key)) as image:
+            image.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        storage.open(key).unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from exc
     _delete_existing_logo_files(business_id, keep=storage.open(key))
     business.logo_url = f"/logos/{business.id}"
     business.updated_at = datetime.now(UTC)
@@ -404,7 +421,7 @@ def public_redirect(
     record_scan(db, link.id, link.business_id, user_agent)
     db.commit()
     return RedirectResponse(
-        url=_public_menu_url(public_code, link.destination_id),
+        url=_public_menu_url(public_code),
         status_code=302,
         headers=_dynamic_public_cache_headers(),
     )
@@ -542,15 +559,26 @@ def admin_assign_owner(
     return owner
 
 
-def _check_login_rate(email: str) -> None:
+def _check_login_rate(email: str, request: Request) -> None:
     settings = get_settings()
     now = datetime.now(UTC)
-    bucket = _login_attempts[email.lower()]
-    while bucket and bucket[0] < now - timedelta(minutes=1):
-        bucket.popleft()
-    if len(bucket) >= settings.login_rate_limit_per_minute:
-        raise HTTPException(status_code=429, detail="Too many login attempts")
-    bucket.append(now)
+    keys = {f"email:{email.lower()}"}
+    client_host = request.client.host if request.client is not None else None
+    if client_host:
+        keys.add(f"ip:{client_host}")
+        keys.add(f"email_ip:{email.lower()}@{client_host}")
+    window_start = now - timedelta(minutes=1)
+    for key in list(_login_attempts.keys()):
+        bucket = _login_attempts[key]
+        while bucket and bucket[0] < window_start:
+            bucket.popleft()
+        if not bucket:
+            _login_attempts.pop(key, None)
+    for key in keys:
+        if len(_login_attempts[key]) >= settings.login_rate_limit_per_minute:
+            raise HTTPException(status_code=429, detail="Too many login attempts")
+    for key in keys:
+        _login_attempts[key].append(now)
 
 
 def _delete_existing_logo_files(business_id: str, keep: Path | None = None) -> None:
@@ -574,8 +602,8 @@ def _dynamic_public_cache_headers() -> dict[str, str]:
     }
 
 
-def _public_menu_url(public_code: str, destination_id: str) -> str:
-    return f"/m/{public_code}/menu.pdf?{urlencode({'v': destination_id})}"
+def _public_menu_url(public_code: str) -> str:
+    return f"/m/{public_code}/menu.pdf"
 
 
 def _list_all_businesses(db: Session) -> list[Business]:

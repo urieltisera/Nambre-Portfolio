@@ -1,10 +1,12 @@
 from io import BytesIO
 
 import pytest
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.models import (
     AcceptanceMethod,
     AuditEvent,
@@ -27,6 +29,12 @@ from tests.conftest import (
 )
 
 PDF_V1 = b"%PDF-1.4\n%v1\n%%EOF\n"
+
+
+def png_1x1() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (1, 1), color=(11, 74, 71)).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_legal_acceptance_is_versioned_and_historical(client, db: Session) -> None:
@@ -332,6 +340,112 @@ def test_public_redirect_rejects_unsupported_dangerous_destination(client, db: S
 
     response = client.get("/r/danger-code")
     assert response.status_code == 404
+
+
+def test_public_redirect_does_not_expose_internal_destination_id(client, db: Session) -> None:
+    owner = make_user(db, "public-redirect@example.com")
+    business = make_business(db, "Public Redirect Biz", "public-redirect-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    uploaded = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files={"file": ("menu.pdf", BytesIO(PDF_V1), "application/pdf")},
+    )
+    assert uploaded.status_code == 200
+    destination_id = uploaded.json()["current"]["id"]
+    public_code = uploaded.json()["public_code"]
+
+    response = client.get(f"/r/{public_code}")
+    assert response.status_code == 302
+    assert response.headers["location"] == f"/m/{public_code}/menu.pdf"
+    assert destination_id not in response.headers["location"]
+
+
+def test_menu_upload_rejects_empty_pdf(client, db: Session) -> None:
+    owner = make_user(db, "empty-pdf@example.com")
+    business = make_business(db, "Empty PDF Biz", "empty-pdf-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    response = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files={"file": ("empty.pdf", BytesIO(b""), "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "PDF file is empty"
+
+
+def test_menu_upload_rejects_spoofed_non_pdf_content(client, db: Session) -> None:
+    owner = make_user(db, "fake-pdf@example.com")
+    business = make_business(db, "Fake PDF Biz", "fake-pdf-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    response = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files={"file": ("menu.pdf", BytesIO(b"not really a pdf"), "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file is not a valid PDF"
+
+
+def test_logo_upload_rejects_spoofed_non_image_content(client, db: Session) -> None:
+    owner = make_user(db, "fake-logo@example.com")
+    business = make_business(db, "Fake Logo Biz", "fake-logo-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    response = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(b"not really a png"), "image/png")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file is not a valid image"
+
+
+def test_logo_upload_accepts_valid_png(client, db: Session) -> None:
+    owner = make_user(db, "valid-logo@example.com")
+    business = make_business(db, "Valid Logo Biz", "valid-logo-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    response = client.post(
+        f"/api/businesses/{business.id}/logo",
+        headers=auth_headers(owner),
+        files={"file": ("logo.png", BytesIO(png_1x1()), "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["logo_url"] == f"/logos/{business.id}"
+
+
+def test_login_rate_limit_blocks_repeated_attempts_from_same_client(client, db: Session) -> None:
+    make_user(db, "ratelimit@example.com", password="correct-pass-123")
+
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={"email": "ratelimit@example.com", "password": "wrong-pass"},
+        )
+        assert response.status_code == 401
+
+    blocked = client.post(
+        "/auth/login",
+        json={"email": "ratelimit@example.com", "password": "wrong-pass"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "Too many login attempts"
+
+
+def test_non_local_environment_rejects_default_secret_key() -> None:
+    with pytest.raises(ValueError, match="SECRET_KEY must be overridden"):
+        Settings(
+            environment="production",
+            secret_key="replace-with-a-long-random-secret",
+        )
 
 
 def test_legal_gate_blocks_admin_endpoints_but_keeps_accept_and_logout_available(

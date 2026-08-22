@@ -14,6 +14,7 @@ os.environ["STORAGE_PATH"] = tempfile.mkdtemp(prefix="menuflow-tests-")
 os.environ["PUBLIC_BASE_URL"] = "https://menu.example.test"
 os.environ["APP_TIMEZONE"] = "America/Argentina/Buenos_Aires"
 
+from app.api import routes  # noqa: E402
 from app.auth.security import create_access_token, create_user_session, hash_password  # noqa: E402
 from app.db import Base, get_db  # noqa: E402
 from app.legal import CURRENT_LEGAL_VERSIONS  # noqa: E402
@@ -45,6 +46,15 @@ def db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture(autouse=True)
+def clear_login_rate_limit() -> Generator[None, None, None]:
+    routes._login_attempts.clear()
+    try:
+        yield
+    finally:
+        routes._login_attempts.clear()
 
 
 @pytest.fixture()

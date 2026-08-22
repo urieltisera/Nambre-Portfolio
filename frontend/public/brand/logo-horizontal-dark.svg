@@ -1,8 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 112" fill="none">
-  <!-- Technical reconstruction from the approved visual reference, not an official master export. -->
-  <g stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="9">
-    <path d="M28 88V24L80 79.5V22.5" />
-    <path d="M47.5 51L65.5 69" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 128" fill="none">
+  <g stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="14">
+    <path d="M22 102V18L96 92V18" />
+    <path d="M48 58L85 95" />
   </g>
-  <text x="117" y="77" fill="#FFFFFF" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="62" font-weight="700" letter-spacing="-2">Nambre</text>
+  <text
+    x="150"
+    y="94"
+    fill="#FFFFFF"
+    font-family="'Montserrat', 'Inter', 'Segoe UI', Arial, sans-serif"
+    font-size="92"
+    font-weight="800"
+    letter-spacing="-3.5"
+  >
+    NAMBRE
+  </text>
 </svg>

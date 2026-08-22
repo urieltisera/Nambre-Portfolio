@@ -88,7 +88,6 @@ export default function Page() {
       {admin && canAdmin ? (
         <main className="page-frame">
           <AdminPanel
-            onLogout={handleLogout}
             onReturnToOwner={() => setAdmin(false)}
             token={token}
           />

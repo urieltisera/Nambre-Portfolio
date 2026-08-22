@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import {ArrowLeft, LogOut, Plus} from "lucide-react";
+import {ArrowLeft, Plus} from "lucide-react";
 import {useCallback, useEffect, useState} from "react";
 import {NambreBrand} from "@/components/brand/NambreBrand";
 import {Button} from "@/components/ui/Button";
@@ -18,11 +18,9 @@ import {
 } from "@/lib/api";
 
 export function AdminPanel({
-  onLogout,
   onReturnToOwner,
   token,
 }: {
-  onLogout?: () => Promise<void> | void;
   onReturnToOwner?: () => void;
   token: string;
 }) {
@@ -128,11 +126,6 @@ export function AdminPanel({
           {onReturnToOwner ? (
             <Button onClick={onReturnToOwner} variant="secondary">
               <ArrowLeft size={16} /> Volver a Owner
-            </Button>
-          ) : null}
-          {onLogout ? (
-            <Button onClick={() => void onLogout()} variant="ghost">
-              <LogOut size={16} /> Cerrar sesión
             </Button>
           ) : null}
         </div>

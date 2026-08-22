@@ -25,6 +25,18 @@ function formatDate(value: string, options: Intl.DateTimeFormatOptions): string 
   return new Intl.DateTimeFormat("es-AR", options).format(parseDate(value));
 }
 
+function formatDayMonth(value: string): string {
+  const parts = new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "short",
+  }).formatToParts(parseDate(value));
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+  const month = (parts.find((part) => part.type === "month")?.value ?? "")
+    .replace(".", "")
+    .toLowerCase();
+  return `${day}-${month}`;
+}
+
 export function sliceDailySeries(series: DailyScan[], window: AnalyticsWindow): DailyScan[] {
   return series.slice(Math.max(0, series.length - window));
 }
@@ -32,8 +44,8 @@ export function sliceDailySeries(series: DailyScan[], window: AnalyticsWindow): 
 export function toActivityPoints(series: DailyScan[]): ActivityPoint[] {
   return series.map((item) => ({
     date: item.date,
-    labelCompact: formatDate(item.date, {day: "2-digit", month: "2-digit"}),
-    labelShort: formatDate(item.date, {day: "2-digit", month: "short"}),
+    labelCompact: formatDayMonth(item.date),
+    labelShort: formatDayMonth(item.date),
     labelTooltip: formatDate(item.date, {
       day: "numeric",
       month: "long",

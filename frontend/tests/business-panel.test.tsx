@@ -542,12 +542,15 @@ describe("BusinessPanel logo flow", () => {
     const [windowSwitcher] = screen.getAllByRole("tablist", {name: "Ventana de actividad"});
     expect(within(windowSwitcher).getByRole("tab", {name: "7 días"}).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByTestId("activity-chart-summary").textContent).toContain("189");
+    expect(screen.getByTestId("activity-chart-summary").textContent).toContain("30-ago");
+    expect(screen.getByTestId("activity-chart-summary").textContent).toContain("30 visualizaciones");
 
     fireEvent.click(within(windowSwitcher).getByRole("tab", {name: "30 días"}));
 
     await waitFor(() => {
       expect(within(windowSwitcher).getByRole("tab", {name: "30 días"}).getAttribute("aria-selected")).toBe("true");
       expect(screen.getByTestId("activity-chart-summary").textContent).toContain("465");
+      expect(screen.getByTestId("activity-chart-summary").textContent).toContain("30-ago");
     });
 
     expect(mocks.request).toHaveBeenCalledWith(

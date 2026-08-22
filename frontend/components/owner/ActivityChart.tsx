@@ -81,7 +81,7 @@ export function ActivityChart({
             <div>
               <span>Mejor día</span>
               <strong>
-                {summary.peakDayLabel} · {summary.peakDayValue}
+                {summary.peakDayLabel} · {summary.peakDayValue} visualizaciones
               </strong>
             </div>
           </div>
@@ -92,7 +92,8 @@ export function ActivityChart({
                 <XAxis
                   axisLine={false}
                   dataKey="date"
-                  minTickGap={20}
+                  interval={window === 30 ? "preserveStartEnd" : 0}
+                  minTickGap={window === 30 ? 28 : 12}
                   tick={{fill: "var(--text-secondary)", fontSize: 12}}
                   tickFormatter={(_, index) =>
                     points[index]?.[variant === "compact" ? "labelCompact" : "labelShort"] ?? ""

@@ -281,10 +281,9 @@ describe("Owner shell", () => {
     expect(within(sidebar).queryByText("Activo")).toBeNull();
     expect(within(sidebar).getByRole("button", {name: "Inicio"})).toBeTruthy();
     expect(within(sidebar).getByRole("button", {name: "Cerrar sesión"})).toBeTruthy();
-    expect(sidebar.querySelector(".sidebar__collapse")).toBeNull();
     const expandTrigger = within(sidebar).getByRole("button", {name: "Expandir sidebar"});
-    expect(expandTrigger.className).toContain("sidebar__brand-trigger");
-    const collapsedBrand = expandTrigger.querySelector("img");
+    expect(expandTrigger.className).toContain("sidebar__collapse");
+    const collapsedBrand = sidebar.querySelector(".sidebar__brand img");
     if (!(collapsedBrand instanceof HTMLImageElement)) {
       throw new Error("Collapsed sidebar mark not found");
     }

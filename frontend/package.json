@@ -18,6 +18,10 @@
     "react-is": "^19.2.8",
     "recharts": "^3.10.1"
   },
+  "overrides": {
+    "postcss": "8.5.26",
+    "sharp": "0.35.3"
+  },
   "devDependencies": {
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.9.0",

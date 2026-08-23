@@ -114,6 +114,9 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
             type={showPassword ? "text" : "password"}
             value={password}
           />
+          <div className="login-form__aux">
+            <Link href="/forgot-password">¿Olvidaste tu contraseña?</Link>
+          </div>
           {legalAcceptanceRequired ? (
             <div className="login-legal" data-testid="login-legal-consent">
               <label className="login-legal__checkbox">

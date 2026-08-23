@@ -19,6 +19,22 @@ docker compose exec backend python ../scripts/seed.py
 Backend: `http://localhost:8000`
 Frontend: `http://localhost:3000`
 
+## Password Reset Email
+
+La recuperación de contraseña usa SMTP genérico configurable por variables de entorno. Para un deploy real en Contabo faltará definir:
+
+- `FRONTEND_BASE_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
+- `SMTP_FROM_NAME`
+- `SMTP_USE_TLS` o `SMTP_USE_SSL`
+- `SMTP_TIMEOUT_SECONDS`
+
+Sin esas credenciales, el backend mantiene la respuesta pública genérica y no expone enumeración de usuarios, pero no podrá entregar el email real.
+
 Credenciales de seed:
 
 - Platform admin: `admin@example.com` / `admin12345`

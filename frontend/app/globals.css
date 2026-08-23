@@ -488,6 +488,22 @@ select:focus-visible,
   gap: 1rem;
 }
 
+.login-form__aux {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.25rem;
+}
+
+.login-form__aux a {
+  color: var(--color-teal-700);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.login-form__aux a:hover {
+  text-decoration: underline;
+}
+
 .login-legal {
   display: grid;
   gap: 0.7rem;
@@ -1330,6 +1346,11 @@ select:focus-visible,
 }
 
 .settings-options {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-password {
   display: grid;
   gap: 1rem;
 }

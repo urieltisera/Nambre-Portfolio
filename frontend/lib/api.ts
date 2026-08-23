@@ -73,6 +73,10 @@ type LoginResponse = {
   access_token: string;
 };
 
+type MessageResponse = {
+  message: string;
+};
+
 type LoginLegalErrorDetail = {
   code?: string;
   legal_status?: LegalStatus;
@@ -157,6 +161,66 @@ export async function logout(token: string): Promise<void> {
     headers: {Authorization: `Bearer ${token}`},
     method: "POST",
   });
+}
+
+export async function requestPasswordReset(email: string): Promise<string> {
+  const response = await fetch(`${API}/auth/password-reset/request`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({email}),
+  });
+  if (!response.ok) {
+    throw new Error("No se pudo procesar la solicitud de recuperación.");
+  }
+  const data = (await response.json()) as MessageResponse;
+  return data.message;
+}
+
+export async function confirmPasswordReset(token: string, newPassword: string): Promise<string> {
+  const response = await fetch(`${API}/auth/password-reset/confirm`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({token, new_password: newPassword}),
+  });
+  if (!response.ok) {
+    if (response.status === 400) {
+      const detail = await readErrorDetail(response);
+      if (detail === "Invalid or expired password reset token") {
+        throw new Error("El enlace es inválido, expiró o ya fue utilizado.");
+      }
+      throw new Error(detail);
+    }
+    throw new Error("No se pudo actualizar la contraseña.");
+  }
+  const data = (await response.json()) as MessageResponse;
+  return data.message;
+}
+
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<string> {
+  const response = await fetch(`${API}/auth/change-password`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    if (response.status === 401) {
+      throw new Error("La contraseña actual no es correcta.");
+    }
+    throw new Error(detail || "No se pudo cambiar la contraseña.");
+  }
+  const data = (await response.json()) as LoginResponse;
+  return data.access_token;
 }
 
 export function assetUrl(path: string): string {

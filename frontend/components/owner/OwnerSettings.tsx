@@ -1,14 +1,16 @@
 "use client";
 
-import React from "react";
+import React, {useMemo, useState} from "react";
 import {ArrowRight, LogOut, Moon, Monitor, Sun} from "lucide-react";
-import {Business, User, userRoleLabel} from "@/lib/api";
+import {Business, User, changePassword, userRoleLabel} from "@/lib/api";
 import {ThemePreference, VisualStyle} from "@/lib/appearance-preferences";
 import {useAppearance} from "@/components/ui/AppearanceProvider";
+import {Alert} from "@/components/ui/Alert";
 import {Badge} from "@/components/ui/Badge";
 import {Button} from "@/components/ui/Button";
 import {Card} from "@/components/ui/Card";
 import {PageHeader} from "@/components/ui/PageHeader";
+import {Input} from "@/components/ui/Input";
 
 const themeOptions: Array<{description: string; icon: React.ReactNode; label: string; value: ThemePreference}> = [
   {description: "Siempre con fondo claro y contraste suave.", icon: <Sun size={18} />, label: "Claro", value: "light"},
@@ -33,14 +35,53 @@ export function OwnerSettings({
   business,
   onLogout,
   onNavigateBusiness,
+  onSessionRefresh,
+  token,
   user,
 }: {
   business: Business | null;
   onLogout: () => Promise<void> | void;
   onNavigateBusiness: () => void;
+  onSessionRefresh?: (token: string) => Promise<void> | void;
+  token: string;
   user: User;
 }) {
   const {resolvedTheme, setTheme, setVisualStyle, theme, visualStyle} = useAppearance();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const mismatch = useMemo(
+    () => confirmPassword.length > 0 && newPassword !== confirmPassword,
+    [confirmPassword, newPassword],
+  );
+
+  async function submitPasswordChange(event: React.FormEvent) {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setPasswordError("La confirmación no coincide con la nueva contraseña.");
+      return;
+    }
+    setChangingPassword(true);
+    setPasswordError("");
+    setPasswordMessage("");
+    try {
+      const nextToken = await changePassword(token, currentPassword, newPassword);
+      await onSessionRefresh?.(nextToken);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordMessage(
+        "La contraseña fue actualizada y esta sesión ya usa la credencial nueva.",
+      );
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "No se pudo cambiar la contraseña.");
+    } finally {
+      setChangingPassword(false);
+    }
+  }
 
   return (
     <section className="settings-screen">
@@ -143,6 +184,58 @@ export function OwnerSettings({
           ) : (
             <p className="muted">Todavía no hay un negocio activo cargado.</p>
           )}
+        </Card>
+
+        <Card className="settings-section">
+          <div className="settings-section__header">
+            <div>
+              <h2>Seguridad</h2>
+              <p>Cambiá tu contraseña y mantené la sesión alineada con el backend real.</p>
+            </div>
+          </div>
+          <form className="settings-password" onSubmit={submitPasswordChange}>
+            <Input
+              autoComplete="current-password"
+              disabled={changingPassword}
+              label="Contraseña actual"
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              type="password"
+              value={currentPassword}
+            />
+            <Input
+              autoComplete="new-password"
+              disabled={changingPassword}
+              label="Nueva contraseña"
+              onChange={(event) => setNewPassword(event.target.value)}
+              type="password"
+              value={newPassword}
+            />
+            <Input
+              autoComplete="new-password"
+              disabled={changingPassword}
+              label="Confirmar nueva contraseña"
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              type="password"
+              value={confirmPassword}
+            />
+            {mismatch ? (
+              <Alert tone="danger">La confirmación no coincide con la nueva contraseña.</Alert>
+            ) : null}
+            {passwordMessage ? <Alert tone="success">{passwordMessage}</Alert> : null}
+            {passwordError ? <Alert tone="danger">{passwordError}</Alert> : null}
+            <Button
+              disabled={
+                changingPassword ||
+                !currentPassword.trim() ||
+                !newPassword.trim() ||
+                !confirmPassword.trim() ||
+                mismatch
+              }
+              type="submit"
+            >
+              {changingPassword ? "Guardando..." : "Guardar nueva contraseña"}
+            </Button>
+          </form>
         </Card>
 
         <Card className="settings-section">

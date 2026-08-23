@@ -84,6 +84,11 @@ from app.services.auth_service import (
     issue_password_reset_token,
     reset_password,
 )
+from app.services.email_service import (
+    EmailDeliveryError,
+    password_reset_delivery_enabled,
+    send_password_reset_email,
+)
 from app.services.legal_service import (
     accept_legal_documents,
     latest_legal_acceptances,
@@ -215,7 +220,15 @@ def request_password_reset(
         db.commit()
         return MessageOut(message=response_message)
 
-    issue_password_reset_token(db, user)
+    token = issue_password_reset_token(db, user)
+    delivery = "sent"
+    if password_reset_delivery_enabled():
+        try:
+            send_password_reset_email(user.email, token)
+        except EmailDeliveryError:
+            delivery = "failed"
+    else:
+        delivery = "skipped_not_configured"
     record_audit_event(
         db,
         event_type="auth.password_reset_requested",
@@ -223,7 +236,7 @@ def request_password_reset(
         target_type="user",
         target_id=user.id,
         details={
-            "delivery": "pending_email_integration",
+            "delivery": delivery,
         },
     )
     db.commit()

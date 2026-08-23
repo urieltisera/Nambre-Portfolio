@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     login_rate_limit_per_minute: int = 5
     password_reset_rate_limit_per_hour: int = 3
     password_reset_token_minutes: int = 30
+    frontend_base_url: str = "http://localhost:3000"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None
+    smtp_from_name: str = "Nambre"
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+    smtp_timeout_seconds: int = 10
 
     @model_validator(mode="after")
     def validate_security_defaults(self) -> "Settings":
@@ -37,6 +47,8 @@ class Settings(BaseSettings):
         }
         if self.environment not in {"local", "test"} and self.secret_key in insecure_secrets:
             raise ValueError("SECRET_KEY must be overridden outside local/test environments")
+        if self.smtp_use_ssl and self.smtp_use_tls:
+            raise ValueError("SMTP_USE_SSL and SMTP_USE_TLS cannot both be enabled")
         return self
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

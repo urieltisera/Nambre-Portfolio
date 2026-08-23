@@ -62,12 +62,14 @@ export function BusinessPanel({
   isPlatformAdmin = false,
   onLogout = async () => undefined,
   onOpenAdmin,
+  onSessionRefresh,
   user = null,
 }: {
   token: string;
   isPlatformAdmin?: boolean;
   onLogout?: () => Promise<void> | void;
   onOpenAdmin?: () => void;
+  onSessionRefresh?: (token: string) => Promise<void> | void;
   user?: User | null;
 }) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -894,6 +896,8 @@ export function BusinessPanel({
           business={business}
           onLogout={onLogout}
           onNavigateBusiness={() => setView("business")}
+          onSessionRefresh={onSessionRefresh}
+          token={token}
           user={user}
         />
       ) : null}

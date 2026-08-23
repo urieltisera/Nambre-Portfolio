@@ -4,7 +4,7 @@ import React from "react";
 import {useState} from "react";
 import {AdminPanel} from "@/components/AdminPanel";
 import {BusinessPanel} from "@/components/BusinessPanel";
-import {LoginForm} from "@/components/LoginForm";
+import {LoginForm} from "@/components/auth/LoginForm";
 import {Alert} from "@/components/ui/Alert";
 import {AppearanceProvider} from "@/components/ui/AppearanceProvider";
 import {Button} from "@/components/ui/Button";
@@ -97,6 +97,7 @@ export default function Page() {
           isPlatformAdmin={canAdmin}
           onLogout={handleLogout}
           onOpenAdmin={canAdmin ? () => setAdmin(true) : undefined}
+          onSessionRefresh={handleToken}
           token={token}
           user={user}
         />

@@ -19,7 +19,7 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
-vi.mock("@/components/LoginForm", () => ({
+vi.mock("@/components/auth/LoginForm", () => ({
   LoginForm: ({onToken}: {onToken: (token: string) => void}) => (
     <button onClick={() => void onToken("owner-token")}>Mock login</button>
   ),

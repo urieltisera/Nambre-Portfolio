@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         r")(?::\d+)?$"
     )
     login_rate_limit_per_minute: int = 5
+    password_reset_rate_limit_per_hour: int = 3
+    password_reset_token_minutes: int = 30
 
     @model_validator(mode="after")
     def validate_security_defaults(self) -> "Settings":

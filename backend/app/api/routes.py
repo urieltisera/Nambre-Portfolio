@@ -59,6 +59,7 @@ from app.schemas import (
     BusinessCreate,
     BusinessOut,
     BusinessPatch,
+    ChangePasswordIn,
     DailyScanOut,
     LegalAcceptIn,
     LegalDocumentStatusOut,
@@ -66,13 +67,23 @@ from app.schemas import (
     LoginIn,
     MenuAssetOut,
     MenuStateOut,
+    MessageOut,
     OwnerAssignIn,
+    PasswordResetConfirmIn,
+    PasswordResetRequestIn,
     QRCodeOut,
     RollbackIn,
     TokenOut,
     UserOut,
 )
 from app.services.analytics_service import daily_series, record_scan, summary
+from app.services.auth_service import (
+    InvalidCurrentPasswordError,
+    PasswordResetTokenError,
+    change_password,
+    issue_password_reset_token,
+    reset_password,
+)
 from app.services.legal_service import (
     accept_legal_documents,
     latest_legal_acceptances,
@@ -80,11 +91,12 @@ from app.services.legal_service import (
 )
 from app.services.menu_service import get_active_menu, rollback_menu, upload_menu_pdf
 from app.services.qr_service import generate_qr_assets
-from app.services.user_admin_service import normalize_email
+from app.services.user_admin_service import AdminCreationError, normalize_email
 from app.storage.local import LocalStorage
 
 router = APIRouter()
 _login_attempts: dict[str, deque[datetime]] = defaultdict(deque)
+_password_reset_attempts: dict[str, deque[datetime]] = defaultdict(deque)
 LOGO_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
 
 
@@ -150,6 +162,96 @@ def logout(
         )
         db.commit()
     return Response(status_code=204)
+
+
+@router.post("/auth/change-password", response_model=TokenOut)
+def authenticated_change_password(
+    payload: ChangePasswordIn,
+    auth: AuthContext = Depends(get_current_auth),
+    db: Session = Depends(get_db),
+) -> TokenOut:
+    try:
+        access_token = change_password(
+            db,
+            auth.user,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except InvalidCurrentPasswordError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        ) from None
+    except AdminCreationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    record_audit_event(
+        db,
+        event_type="auth.password_changed",
+        actor_user_id=auth.user.id,
+        target_type="user",
+        target_id=auth.user.id,
+    )
+    db.commit()
+    return TokenOut(access_token=access_token)
+
+
+@router.post("/auth/password-reset/request", response_model=MessageOut, status_code=202)
+def request_password_reset(
+    payload: PasswordResetRequestIn, request: Request, db: Session = Depends(get_db)
+) -> MessageOut:
+    _check_password_reset_rate(payload.email, request)
+    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    response_message = (
+        "Si existe una cuenta asociada, recibiras instrucciones para recuperar el acceso."
+    )
+    if user is None or not user.is_active:
+        record_audit_event(
+            db,
+            event_type="auth.password_reset_requested",
+            target_type="user_email",
+            target_id=payload.email.lower(),
+            details={"delivery": "skipped"},
+        )
+        db.commit()
+        return MessageOut(message=response_message)
+
+    issue_password_reset_token(db, user)
+    record_audit_event(
+        db,
+        event_type="auth.password_reset_requested",
+        actor_user_id=user.id,
+        target_type="user",
+        target_id=user.id,
+        details={
+            "delivery": "pending_email_integration",
+        },
+    )
+    db.commit()
+    return MessageOut(message=response_message)
+
+
+@router.post("/auth/password-reset/confirm", response_model=MessageOut)
+def confirm_password_reset(
+    payload: PasswordResetConfirmIn, db: Session = Depends(get_db)
+) -> MessageOut:
+    try:
+        user_id = reset_password(db, token=payload.token, new_password=payload.new_password)
+    except PasswordResetTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token",
+        ) from None
+    except AdminCreationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    record_audit_event(
+        db,
+        event_type="auth.password_reset_completed",
+        actor_user_id=user_id,
+        target_type="user",
+        target_id=user_id,
+    )
+    db.commit()
+    return MessageOut(message="La contraseña fue actualizada.")
 
 
 @router.get("/api/me", response_model=UserOut)
@@ -562,11 +664,7 @@ def admin_assign_owner(
 def _check_login_rate(email: str, request: Request) -> None:
     settings = get_settings()
     now = datetime.now(UTC)
-    keys = {f"email:{email.lower()}"}
-    client_host = request.client.host if request.client is not None else None
-    if client_host:
-        keys.add(f"ip:{client_host}")
-        keys.add(f"email_ip:{email.lower()}@{client_host}")
+    keys = _rate_limit_keys(email, request)
     window_start = now - timedelta(minutes=1)
     for key in list(_login_attempts.keys()):
         bucket = _login_attempts[key]
@@ -579,6 +677,33 @@ def _check_login_rate(email: str, request: Request) -> None:
             raise HTTPException(status_code=429, detail="Too many login attempts")
     for key in keys:
         _login_attempts[key].append(now)
+
+
+def _check_password_reset_rate(email: str, request: Request) -> None:
+    settings = get_settings()
+    now = datetime.now(UTC)
+    keys = _rate_limit_keys(email, request)
+    window_start = now - timedelta(hours=1)
+    for key in list(_password_reset_attempts.keys()):
+        bucket = _password_reset_attempts[key]
+        while bucket and bucket[0] < window_start:
+            bucket.popleft()
+        if not bucket:
+            _password_reset_attempts.pop(key, None)
+    for key in keys:
+        if len(_password_reset_attempts[key]) >= settings.password_reset_rate_limit_per_hour:
+            raise HTTPException(status_code=429, detail="Too many password reset attempts")
+    for key in keys:
+        _password_reset_attempts[key].append(now)
+
+
+def _rate_limit_keys(email: str, request: Request) -> set[str]:
+    keys = {f"email:{email.lower()}"}
+    client_host = request.client.host if request.client is not None else None
+    if client_host:
+        keys.add(f"ip:{client_host}")
+        keys.add(f"email_ip:{email.lower()}@{client_host}")
+    return keys
 
 
 def _delete_existing_logo_files(business_id: str, keep: Path | None = None) -> None:

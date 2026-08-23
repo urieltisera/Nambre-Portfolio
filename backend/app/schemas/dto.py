@@ -18,10 +18,28 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+class MessageOut(BaseModel):
+    message: str
+
+
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
     accept_legal: bool = False
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str
+    new_password: str
 
 
 class UserOut(BaseModel):

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 import pytest
@@ -16,9 +17,11 @@ from app.models import (
     LegalAcceptance,
     LegalDocumentType,
     MembershipRole,
+    PasswordResetToken,
     QRCode,
     UserSession,
 )
+from app.services import auth_service
 from tests.conftest import (
     add_membership,
     auth_headers,
@@ -163,6 +166,30 @@ def test_revoked_session_cannot_be_reused(client, db: Session) -> None:
     reused = client.get("/api/me", headers=headers)
     assert reused.status_code == 401
     assert reused.json()["detail"] == "Session expired"
+
+
+def test_expired_session_token_is_rejected(client, db: Session) -> None:
+    user = make_user(db, "expired@example.com", password="expired-pass-123")
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "expired@example.com",
+            "password": "expired-pass-123",
+        },
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    assert session is not None
+    session.expires_at = session.issued_at - timedelta(minutes=1)
+    db.commit()
+
+    expired = client.get("/api/me", headers=headers)
+    assert expired.status_code == 401
+    assert expired.json()["detail"] == "Session expired"
 
 
 def test_suspended_user_loses_access_even_with_existing_session(client, db: Session) -> None:
@@ -438,6 +465,193 @@ def test_login_rate_limit_blocks_repeated_attempts_from_same_client(client, db: 
     )
     assert blocked.status_code == 429
     assert blocked.json()["detail"] == "Too many login attempts"
+
+
+def test_login_rejects_invalid_password_without_user_enumeration(client, db: Session) -> None:
+    make_user(db, "known@example.com", password="known-pass-123")
+
+    existing = client.post(
+        "/auth/login",
+        json={"email": "known@example.com", "password": "wrong-pass-123"},
+    )
+    missing = client.post(
+        "/auth/login",
+        json={"email": "missing@example.com", "password": "wrong-pass-123"},
+    )
+
+    assert existing.status_code == 401
+    assert missing.status_code == 401
+    assert existing.json() == missing.json() == {"detail": "Invalid credentials"}
+
+
+def test_change_password_rotates_sessions_and_rejects_old_password(client, db: Session) -> None:
+    user = make_user(db, "change@example.com", password="old-pass-123")
+
+    login_a = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "change@example.com", "password": "old-pass-123"},
+    )
+    login_b = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "change@example.com", "password": "old-pass-123"},
+    )
+    assert login_a.status_code == 200
+    assert login_b.status_code == 200
+
+    old_headers_a = {"Authorization": f"Bearer {login_a.json()['access_token']}"}
+    old_headers_b = {"Authorization": f"Bearer {login_b.json()['access_token']}"}
+
+    changed = client.post(
+        "/auth/change-password",
+        headers=old_headers_a,
+        json={"current_password": "old-pass-123", "new_password": "new-pass-123"},
+    )
+    assert changed.status_code == 200
+    new_headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+
+    assert client.get("/api/me", headers=old_headers_a).status_code == 401
+    assert client.get("/api/me", headers=old_headers_b).status_code == 401
+    assert client.get("/api/me", headers=new_headers).status_code == 200
+
+    old_login = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "change@example.com", "password": "old-pass-123"},
+    )
+    new_login = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "change@example.com", "password": "new-pass-123"},
+    )
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
+
+    sessions = db.scalars(select(UserSession).where(UserSession.user_id == user.id)).all()
+    revoked = [session for session in sessions if session.revoked_at is not None]
+    active = [session for session in sessions if session.revoked_at is None]
+    assert len(revoked) == 2
+    assert {session.revoke_reason for session in revoked} == {"password_changed"}
+    assert len(active) == 2
+
+
+def test_password_reset_request_is_generic_for_existing_and_missing_users(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_user(db, "reset@example.com", password="reset-pass-123")
+    monkeypatch.setattr(auth_service.secrets, "token_urlsafe", lambda _size: "known-reset-token")
+
+    existing = client.post("/auth/password-reset/request", json={"email": "reset@example.com"})
+    missing = client.post("/auth/password-reset/request", json={"email": "missing@example.com"})
+
+    assert existing.status_code == 202
+    assert missing.status_code == 202
+    assert (
+        existing.json()
+        == missing.json()
+        == {
+            "message": (
+                "Si existe una cuenta asociada, recibiras instrucciones para recuperar el acceso."
+            )
+        }
+    )
+
+    tokens = db.scalars(select(PasswordResetToken)).all()
+    assert len(tokens) == 1
+    assert tokens[0].token_hash == auth_service.hash_password_reset_token("known-reset-token")
+    assert tokens[0].token_hash != "known-reset-token"
+    assert tokens[0].consumed_at is None
+
+
+def test_password_reset_rate_limit_blocks_repeated_requests(client) -> None:
+    for _ in range(3):
+        response = client.post("/auth/password-reset/request", json={"email": "rate@example.com"})
+        assert response.status_code == 202
+
+    blocked = client.post("/auth/password-reset/request", json={"email": "rate@example.com"})
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "Too many password reset attempts"
+
+
+def test_password_reset_confirm_rejects_invalid_token(client) -> None:
+    response = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "invalid-token", "new_password": "new-pass-123"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid or expired password reset token"
+
+
+def test_password_reset_confirm_rejects_expired_token(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = make_user(db, "expired-reset@example.com", password="old-pass-123")
+    monkeypatch.setattr(auth_service.secrets, "token_urlsafe", lambda _size: "expired-reset-token")
+
+    requested = client.post(
+        "/auth/password-reset/request",
+        json={"email": "expired-reset@example.com"},
+    )
+    assert requested.status_code == 202
+
+    reset_token = db.scalar(select(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+    assert reset_token is not None
+    reset_token.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+
+    expired = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "expired-reset-token", "new_password": "new-pass-123"},
+    )
+    assert expired.status_code == 400
+    assert expired.json()["detail"] == "Invalid or expired password reset token"
+
+
+def test_password_reset_confirm_is_single_use_and_invalidates_sessions(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = make_user(db, "single-use@example.com", password="old-pass-123")
+    login = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "single-use@example.com", "password": "old-pass-123"},
+    )
+    assert login.status_code == 200
+    old_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    monkeypatch.setattr(auth_service.secrets, "token_urlsafe", lambda _size: "single-use-token")
+    requested = client.post(
+        "/auth/password-reset/request",
+        json={"email": "single-use@example.com"},
+    )
+    assert requested.status_code == 202
+
+    reset = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "single-use-token", "new_password": "new-pass-123"},
+    )
+    assert reset.status_code == 200
+    assert reset.json() == {"message": "La contraseña fue actualizada."}
+
+    reused = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "single-use-token", "new_password": "another-pass-123"},
+    )
+    assert reused.status_code == 400
+    assert reused.json()["detail"] == "Invalid or expired password reset token"
+
+    assert client.get("/api/me", headers=old_headers).status_code == 401
+
+    old_login = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "single-use@example.com", "password": "old-pass-123"},
+    )
+    new_login = client.post(
+        "/auth/login",
+        json={"accept_legal": True, "email": "single-use@example.com", "password": "new-pass-123"},
+    )
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
+
+    reset_token = db.scalar(select(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+    assert reset_token is not None
+    assert reset_token.consumed_at is not None
 
 
 def test_non_local_environment_rejects_default_secret_key() -> None:

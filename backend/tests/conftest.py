@@ -51,10 +51,12 @@ def db() -> Generator[Session, None, None]:
 @pytest.fixture(autouse=True)
 def clear_login_rate_limit() -> Generator[None, None, None]:
     routes._login_attempts.clear()
+    routes._password_reset_attempts.clear()
     try:
         yield
     finally:
         routes._login_attempts.clear()
+        routes._password_reset_attempts.clear()
 
 
 @pytest.fixture()

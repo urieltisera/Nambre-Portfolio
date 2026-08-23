@@ -13,7 +13,11 @@ export function Alert({
   tone?: "info" | "success" | "warning" | "danger";
 }) {
   return (
-    <div className={cn("ui-alert", `ui-alert--${tone}`, className)} role="status">
+    <div
+      aria-live={tone === "danger" ? "assertive" : "polite"}
+      className={cn("ui-alert", `ui-alert--${tone}`, className)}
+      role={tone === "danger" ? "alert" : "status"}
+    >
       {title ? <strong className="ui-alert__title">{title}</strong> : null}
       <div>{children}</div>
     </div>

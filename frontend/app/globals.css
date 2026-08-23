@@ -530,6 +530,24 @@ select:focus-visible,
   width: 100%;
 }
 
+.login-card__meta {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.login-card__legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
+.login-card__legal-links a {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
 .legal-modal {
   position: fixed;
   inset: 0;
@@ -572,6 +590,80 @@ select:focus-visible,
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.status-screen,
+.legal-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 14%, transparent), transparent 38%),
+    radial-gradient(circle at bottom right, color-mix(in srgb, var(--primary) 10%, transparent), transparent 34%),
+    var(--background);
+}
+
+.status-screen__card,
+.legal-page__shell {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.4rem, 2vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.status-screen__brand,
+.legal-page__brand {
+  width: fit-content;
+}
+
+.status-screen__eyebrow,
+.legal-page__eyebrow {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status-screen__card h1,
+.legal-page__header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  letter-spacing: -0.04em;
+}
+
+.status-screen__card p,
+.legal-page__header p,
+.legal-page__content p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.status-screen__actions,
+.legal-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.legal-page__header {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.legal-page__content {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-secondary);
 }
 
 .owner-shell {
@@ -1464,5 +1556,11 @@ select:focus-visible,
 
   .activity-chart__summary {
     grid-template-columns: 1fr;
+  }
+
+  .login-card__legal-links,
+  .status-screen__actions,
+  .legal-page__actions {
+    flex-direction: column;
   }
 }

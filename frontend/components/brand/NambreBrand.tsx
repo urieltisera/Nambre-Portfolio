@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import {useAppearance} from "@/components/ui/AppearanceProvider";
 import {cn} from "@/lib/cn";
 
@@ -26,11 +27,14 @@ export function NambreBrand({
   if (mode === "mark") {
     return (
       <span className={cn("menuflow-brand menuflow-brand--mark", className)}>
-        <img
+        <Image
           alt={alt}
           aria-hidden={decorative}
           className="menuflow-brand__asset menuflow-brand__asset--mark"
+          height={96}
+          priority
           src={markSrc}
+          width={82}
         />
       </span>
     );
@@ -39,11 +43,14 @@ export function NambreBrand({
   if (mode === "admin") {
     return (
       <span className={cn("menuflow-brand menuflow-brand--admin", className)}>
-        <img
+        <Image
           alt={alt}
           aria-hidden={decorative}
           className="menuflow-brand__asset menuflow-brand__asset--horizontal"
+          height={128}
+          priority
           src={horizontalSrc}
+          width={323}
         />
         <span className="menuflow-brand__admin-copy">
           <span>Admin</span>
@@ -54,11 +61,14 @@ export function NambreBrand({
 
   return (
     <span className={cn("menuflow-brand menuflow-brand--horizontal", className)}>
-      <img
+      <Image
         alt={alt}
         aria-hidden={decorative}
         className="menuflow-brand__asset menuflow-brand__asset--horizontal"
+        height={128}
+        priority
         src={horizontalSrc}
+        width={323}
       />
     </span>
   );

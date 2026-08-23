@@ -1,6 +1,7 @@
 "use client";
 
 import React, {useState} from "react";
+import Link from "next/link";
 import {Eye, EyeOff, LogIn} from "lucide-react";
 import {NambreBrand} from "@/components/brand/NambreBrand";
 import {
@@ -13,17 +14,7 @@ import {Alert} from "@/components/ui/Alert";
 import {Button} from "@/components/ui/Button";
 import {Card} from "@/components/ui/Card";
 import {Input} from "@/components/ui/Input";
-
-const LEGAL_DOCUMENT_COPY = {
-  privacy: {
-    body: "Contenido provisorio para implementacion: esta modal representa la Politica de Privacidad vigente de Nambre hasta recibir el texto legal definitivo.",
-    title: "Politica de Privacidad",
-  },
-  terms: {
-    body: "Contenido provisorio para implementacion: esta modal representa los Terminos y Condiciones vigentes de Nambre hasta recibir el texto legal definitivo.",
-    title: "Terminos y Condiciones",
-  },
-} satisfies Record<"privacy" | "terms", {body: string; title: string}>;
+import {LEGAL_DOCUMENT_COPY} from "@/lib/legal-copy";
 
 const LEGAL_DOCUMENT_LABELS: Record<LegalDocumentType, string> = {
   acceptable_use: "Uso aceptable",
@@ -200,7 +191,13 @@ export function LoginForm({onToken}: {onToken: (token: string) => void}) {
             </>
           )}
         </form>
-        <p className="login-card__footer">Tu carta, siempre al día.</p>
+        <div className="login-card__meta">
+          <p className="login-card__footer">Tu carta, siempre al día.</p>
+          <nav aria-label="Enlaces legales públicos" className="login-card__legal-links">
+            <Link href="/terms">Terminos</Link>
+            <Link href="/privacy">Privacidad</Link>
+          </nav>
+        </div>
       </Card>
       {openDocument ? (
         <div className="legal-modal" role="presentation">

@@ -42,6 +42,12 @@ def png_1x1() -> bytes:
     return buffer.getvalue()
 
 
+def png_100x100() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (100, 100), color=(11, 74, 71)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def test_legal_acceptance_is_versioned_and_historical(client, db: Session) -> None:
     user = make_user(db, "legal@example.com", password="legal-pass-123")
     business = make_business(db, "Legal Biz", "legal-biz")
@@ -619,6 +625,28 @@ def test_logo_upload_accepts_valid_png(client, db: Session) -> None:
 
     assert response.status_code == 200
     assert response.json()["logo_url"] == f"/logos/{business.id}"
+
+
+def test_logo_upload_rejects_decompression_bomb_like_image(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = make_user(db, "bomb-logo@example.com")
+    business = make_business(db, "Bomb Logo Biz", "bomb-logo-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    original_limit = Image.MAX_IMAGE_PIXELS
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    try:
+        response = client.post(
+            f"/api/businesses/{business.id}/logo",
+            headers=auth_headers(owner),
+            files={"file": ("logo.png", BytesIO(png_100x100()), "image/png")},
+        )
+    finally:
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", original_limit)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file is not a valid image"
 
 
 def test_login_rate_limit_blocks_repeated_attempts_from_same_client(client, db: Session) -> None:

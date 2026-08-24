@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
@@ -159,10 +160,18 @@ def _is_image_key_referenced_by_snapshot(db: Session, image_key: str) -> bool:
 def _process_product_image(content: bytes) -> ProcessedMenuItemImage:
     settings = get_settings()
     try:
-        with Image.open(BytesIO(content)) as source:
-            normalized = ImageOps.exif_transpose(source)
-            normalized.load()
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as source:
+                normalized = ImageOps.exif_transpose(source)
+                normalized.load()
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is not a valid product image",

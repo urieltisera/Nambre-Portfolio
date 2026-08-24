@@ -4,6 +4,7 @@ from io import BytesIO
 import pytest
 from PIL import Image
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -942,6 +943,79 @@ def test_draft_preview_publish_flow_keeps_public_snapshot_stable(client, db: Ses
     assert public_v2.json()["categories"][0]["items"][0]["price"] == "1200.00"
 
 
+def test_publish_retries_once_after_snapshot_version_conflict(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api import routes
+
+    owner = make_user(db, "publish-retry-owner@example.com")
+    business = make_business(
+        db, "Publish Retry Biz", "publish-retry-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    original_publish = routes.publish_digital_menu
+    calls = {"count": 0}
+
+    def flaky_publish(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise IntegrityError(
+                "insert into digital_menu_published_snapshots",
+                params=None,
+                orig=Exception("uq_digital_menu_snapshot_version"),
+            )
+        return original_publish(*args, **kwargs)
+
+    monkeypatch.setattr(routes, "publish_digital_menu", flaky_publish)
+
+    response = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/publish",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["version"] == 1
+    assert calls["count"] == 2
+
+
+def test_publish_returns_conflict_when_snapshot_version_conflict_persists(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api import routes
+
+    owner = make_user(db, "publish-conflict-owner@example.com")
+    business = make_business(
+        db, "Publish Conflict Biz", "publish-conflict-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    def always_conflict(*args, **kwargs):
+        raise IntegrityError(
+            "insert into digital_menu_published_snapshots",
+            params=None,
+            orig=Exception("uq_digital_menu_snapshot_version"),
+        )
+
+    monkeypatch.setattr(routes, "publish_digital_menu", always_conflict)
+
+    response = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/publish",
+        headers=headers,
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Another publish was completed at the same time. Refresh and try again."
+    )
+
+
 def test_public_redirect_to_digital_menu_keeps_same_code_across_published_versions(
     client, db: Session
 ) -> None:
@@ -1061,6 +1135,84 @@ def test_switching_away_from_digital_menu_blocks_legacy_public_menu_routes(
     legacy_after = client.get(f"/m/{public_code}/digital-menu")
     assert legacy_after.status_code == 403
     assert legacy_after.text == "Este menú no se encuentra disponible actualmente."
+
+
+def test_multi_tenant_digital_menu_abuse_is_blocked_across_private_endpoints(
+    client, db: Session
+) -> None:
+    owner_a = make_user(db, "tenant-owner-a@example.com")
+    owner_b = make_user(db, "tenant-owner-b@example.com")
+    business_a = make_business(db, "Tenant A", "tenant-a", plan_key=BusinessPlanKey.premium)
+    business_b = make_business(db, "Tenant B", "tenant-b", plan_key=BusinessPlanKey.premium)
+    add_membership(db, owner_a, business_a, MembershipRole.owner)
+    add_membership(db, owner_b, business_b, MembershipRole.owner)
+
+    headers_a = auth_headers(owner_a)
+    headers_b = auth_headers(owner_b)
+    menu_a, category_a = _create_menu_with_category(client, business_a.id, headers_a)
+    item_a = _create_menu_item(client, business_a.id, menu_a, category_a, headers_a)
+    menu_b, category_b = _create_menu_with_category(client, business_b.id, headers_b)
+    item_b = _create_menu_item(client, business_b.id, menu_b, category_b, headers_b)
+
+    image_upload = client.post(
+        f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/items/{item_b['id']}/image",
+        headers=headers_b,
+        files=_image_upload("producto.png", _image_bytes(format_name="PNG"), "image/png"),
+    )
+    assert image_upload.status_code == 200
+
+    forbidden_responses = [
+        client.patch(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}",
+            headers=headers_a,
+            json={"name": "Ataque"},
+        ),
+        client.get(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/preview",
+            headers=headers_a,
+        ),
+        client.post(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/categories",
+            headers=headers_a,
+            json={"name": "Hack"},
+        ),
+        client.patch(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/categories/{category_b}",
+            headers=headers_a,
+            json={"name": "Hack"},
+        ),
+        client.patch(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/items/{item_b['id']}",
+            headers=headers_a,
+            json={"price": "1.00"},
+        ),
+        client.post(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/items/{item_b['id']}/image",
+            headers=headers_a,
+            files=_image_upload("hack.png", _image_bytes(format_name="PNG"), "image/png"),
+        ),
+        client.get(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/items/{item_b['id']}/image",
+            headers=headers_a,
+        ),
+        client.post(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/publish",
+            headers=headers_a,
+        ),
+        client.post(
+            f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/unpublish",
+            headers=headers_a,
+        ),
+    ]
+
+    for response in forbidden_responses:
+        assert response.status_code == 403
+
+    unaffected = client.get(
+        f"/api/businesses/{business_a.id}/digital-menu/{menu_a}/items/{item_a['id']}",
+        headers=headers_a,
+    )
+    assert unaffected.status_code == 405
 
 
 def test_theme_changes_stay_in_draft_until_publish(client, db: Session) -> None:
@@ -1372,6 +1524,37 @@ def test_product_image_upload_validation_and_failure_do_not_alter_item(client, d
     assert Decimal(str(persisted.price)) == Decimal("9999.00")
     assert persisted.image_key is None
     assert persisted.image_url is None
+
+
+def test_product_image_upload_rejects_decompression_bomb_like_image(
+    client, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = make_user(db, "item-image-bomb@example.com")
+    business = make_business(
+        db, "Bomb Image Biz", "bomb-image-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    original_limit = Image.MAX_IMAGE_PIXELS
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    try:
+        response = client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+            headers=headers,
+            files=_image_upload(
+                "bomba.png",
+                _image_bytes(format_name="PNG", size=(100, 100)),
+                "image/png",
+            ),
+        )
+    finally:
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", original_limit)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file is not a valid product image"
 
 
 def test_replacing_product_image_updates_reference_and_failed_replace_keeps_previous_image(

@@ -1,3 +1,4 @@
+import warnings
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from os import PathLike
@@ -520,9 +521,16 @@ async def upload_logo(
         storage.open(key).unlink(missing_ok=True)
         raise HTTPException(status_code=413, detail="Logo too large")
     try:
-        with Image.open(storage.open(key)) as image:
-            image.verify()
-    except (UnidentifiedImageError, OSError) as exc:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(storage.open(key)) as image:
+                image.verify()
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        UnidentifiedImageError,
+        OSError,
+    ) as exc:
         storage.open(key).unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from exc
     _delete_existing_logo_files(business_id, keep=storage.open(key))
@@ -677,22 +685,42 @@ def publish_business_digital_menu(
 ) -> dict[str, object]:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    business = require_operable_business(db, user, business_id)
-    require_business_feature(business, BusinessFeatureKey.digital_menu)
-    menu = get_business_digital_menu(db, business_id, menu_id)
-    snapshot = publish_digital_menu(db, business=business, menu=menu, actor_user_id=user.id)
-    record_audit_event(
-        db,
-        event_type="digital_menu.publish",
-        actor_user_id=user.id,
-        business_id=business.id,
-        target_type="digital_menu",
-        target_id=menu.id,
-        details={"published_at": snapshot.published_at.isoformat(), "version": snapshot.version},
+    for attempt in range(2):
+        business = require_operable_business(db, user, business_id)
+        require_business_feature(business, BusinessFeatureKey.digital_menu)
+        menu = get_business_digital_menu(db, business_id, menu_id)
+        try:
+            snapshot = publish_digital_menu(db, business=business, menu=menu, actor_user_id=user.id)
+            record_audit_event(
+                db,
+                event_type="digital_menu.publish",
+                actor_user_id=user.id,
+                business_id=business.id,
+                target_type="digital_menu",
+                target_id=menu.id,
+                details={
+                    "published_at": snapshot.published_at.isoformat(),
+                    "version": snapshot.version,
+                },
+            )
+            db.commit()
+            db.refresh(menu)
+            return {
+                "menu": menu,
+                "published_at": snapshot.published_at,
+                "version": snapshot.version,
+            }
+        except IntegrityError as exc:
+            db.rollback()
+            if not _is_snapshot_publish_conflict(exc) or attempt == 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Another publish was completed at the same time. Refresh and try again.",
+                ) from exc
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Another publish was completed at the same time. Refresh and try again.",
     )
-    db.commit()
-    db.refresh(menu)
-    return {"menu": menu, "published_at": snapshot.published_at, "version": snapshot.version}
 
 
 @router.post(
@@ -1542,6 +1570,13 @@ def _validated_business_patch(data: dict[str, object]) -> dict[str, object]:
 
 def _public_unavailable_response() -> PlainTextResponse:
     return PlainTextResponse("Este menú no se encuentra disponible actualmente.", status_code=403)
+
+
+def _is_snapshot_publish_conflict(exc: IntegrityError) -> bool:
+    message = str(exc).lower()
+    return "uq_digital_menu_snapshot_version" in message or (
+        "digital_menu_published_snapshots" in message and "version" in message
+    )
 
 
 def _get_public_link_or_404(db: Session, public_code: str) -> DynamicLink:

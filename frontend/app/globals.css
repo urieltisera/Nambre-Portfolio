@@ -231,6 +231,12 @@ select:focus-visible,
   padding: 0.85rem 0.95rem;
 }
 
+.ui-textarea {
+  min-height: 110px;
+  resize: vertical;
+  padding-block: 0.8rem;
+}
+
 .field {
   display: grid;
   gap: 0.4rem;
@@ -1531,6 +1537,76 @@ select:focus-visible,
   flex-wrap: wrap;
 }
 
+.digital-menu-mode-list,
+.digital-menu-category-list,
+.digital-menu-item-list,
+.digital-menu-checklist {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.digital-menu-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-secondary);
+}
+
+.digital-menu-mode input {
+  margin-top: 0.2rem;
+}
+
+.digital-menu-mode span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.digital-menu-mode small,
+.digital-menu-category-copy p,
+.digital-menu-item-copy p {
+  color: var(--text-secondary);
+}
+
+.digital-menu-category-card,
+.digital-menu-item-row {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.digital-menu-category-header,
+.digital-menu-item-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-secondary);
+  padding: 1rem;
+}
+
+.digital-menu-category-copy,
+.digital-menu-item-copy,
+.digital-menu-badges,
+.digital-menu-inline-actions,
+.digital-menu-form-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.digital-menu-badges {
+  grid-auto-flow: column;
+  justify-content: start;
+}
+
+.digital-menu-inline-actions {
+  grid-template-columns: repeat(auto-fit, minmax(132px, max-content));
+  align-items: start;
+}
+
+.digital-menu-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .error {
   color: var(--danger);
 }
@@ -1623,6 +1699,10 @@ select:focus-visible,
   :root[data-visual-style="maximal"] .content-grid {
     grid-template-columns: 1fr;
   }
+
+  .digital-menu-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1679,6 +1759,11 @@ select:focus-visible,
     grid-template-columns: 1fr;
   }
 
+  .digital-menu-inline-actions,
+  .actions {
+    grid-template-columns: 1fr;
+  }
+
   .settings-business,
   .settings-session,
   .page-header,
@@ -1690,6 +1775,10 @@ select:focus-visible,
 
   .preference-grid {
     grid-template-columns: 1fr;
+  }
+
+  .digital-menu-badges {
+    grid-auto-flow: row;
   }
 
   .activity-chart__summary {

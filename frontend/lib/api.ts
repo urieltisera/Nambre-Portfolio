@@ -10,7 +10,7 @@ export type Business = {
   updated_at?: string;
 };
 
-export type BusinessDestination = "menu_pdf" | "external_url";
+export type BusinessDestination = "menu_pdf" | "external_url" | "digital_menu";
 
 export type MenuAsset = {
   id: string;
@@ -26,6 +26,76 @@ export type MenuState = {
   versions: MenuAsset[];
   public_code: string | null;
 };
+
+export type DigitalMenu = {
+  id: string;
+  business_id: string;
+  name: string;
+  status: "draft" | "published";
+  template_key: string;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MenuCategory = {
+  id: string;
+  digital_menu_id: string;
+  name: string;
+  description: string | null;
+  position: number;
+  is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MenuItem = {
+  id: string;
+  category_id: string;
+  name: string;
+  description: string | null;
+  price: string;
+  currency: string;
+  image_url: string | null;
+  position: number;
+  is_visible: boolean;
+  is_available: boolean;
+  is_featured: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateDigitalMenuPayload = {
+  name: string;
+  template_key?: string;
+  status?: "draft" | "published";
+  is_published?: boolean;
+};
+
+export type UpdateDigitalMenuPayload = Partial<CreateDigitalMenuPayload>;
+
+export type CreateMenuCategoryPayload = {
+  name: string;
+  description?: string | null;
+  position?: number;
+  is_visible?: boolean;
+};
+
+export type UpdateMenuCategoryPayload = Partial<CreateMenuCategoryPayload>;
+
+export type CreateMenuItemPayload = {
+  name: string;
+  description?: string | null;
+  price: string;
+  currency?: string;
+  image_url?: string | null;
+  position?: number;
+  is_visible?: boolean;
+  is_available?: boolean;
+  is_featured?: boolean;
+};
+
+export type UpdateMenuItemPayload = Partial<CreateMenuItemPayload>;
 
 export type QRCode = {
   id: string;
@@ -357,6 +427,157 @@ export async function updateBusinessDestination(
   );
 }
 
+export async function fetchDigitalMenu(
+  token: string | null | undefined,
+  businessId: string,
+): Promise<DigitalMenu | null> {
+  try {
+    return await request<DigitalMenu>(`/api/businesses/${businessId}/digital-menu`, token);
+  } catch (error: unknown) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function createDigitalMenu(
+  token: string | null | undefined,
+  businessId: string,
+  payload: CreateDigitalMenuPayload,
+): Promise<DigitalMenu> {
+  return request<DigitalMenu>(`/api/businesses/${businessId}/digital-menu`, token, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateDigitalMenu(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  payload: UpdateDigitalMenuPayload,
+): Promise<DigitalMenu> {
+  return request<DigitalMenu>(`/api/businesses/${businessId}/digital-menu/${menuId}`, token, {
+    method: "PATCH",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listMenuCategories(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+): Promise<MenuCategory[]> {
+  return request<MenuCategory[]>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/categories`,
+    token,
+  );
+}
+
+export async function createMenuCategory(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  payload: CreateMenuCategoryPayload,
+): Promise<MenuCategory> {
+  return request<MenuCategory>(`/api/businesses/${businessId}/digital-menu/${menuId}/categories`, token, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateMenuCategory(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  categoryId: string,
+  payload: UpdateMenuCategoryPayload,
+): Promise<MenuCategory> {
+  return request<MenuCategory>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/categories/${categoryId}`,
+    token,
+    {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function deleteMenuCategory(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  categoryId: string,
+): Promise<void> {
+  await request<MessageResponse>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/categories/${categoryId}`,
+    token,
+    {method: "DELETE"},
+  );
+}
+
+export async function listMenuItems(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+): Promise<MenuItem[]> {
+  return request<MenuItem[]>(`/api/businesses/${businessId}/digital-menu/${menuId}/items`, token);
+}
+
+export async function createMenuItem(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  categoryId: string,
+  payload: CreateMenuItemPayload,
+): Promise<MenuItem> {
+  return request<MenuItem>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/categories/${categoryId}/items`,
+    token,
+    {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function updateMenuItem(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  itemId: string,
+  payload: UpdateMenuItemPayload,
+): Promise<MenuItem> {
+  return request<MenuItem>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/items/${itemId}`,
+    token,
+    {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function deleteMenuItem(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  itemId: string,
+): Promise<void> {
+  await request<MessageResponse>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/items/${itemId}`,
+    token,
+    {method: "DELETE"},
+  );
+}
+
 export function formatPeakHour(hour: number | null): string {
   if (hour === null) return "—";
   return `${hour.toString().padStart(2, "0")}:00`;
@@ -471,7 +692,9 @@ export function inviteClientErrorMessage(error: unknown): string {
 }
 
 export function businessDestinationLabel(destinationType: Business["destination_type"]): string {
-  return destinationType === "external_url" ? "Carta externa" : "Carta en Nambre";
+  if (destinationType === "external_url") return "Carta digital propia";
+  if (destinationType === "digital_menu") return "Carta Nambre";
+  return "PDF";
 }
 
 export function businessDestinationErrorMessage(error: unknown): string {
@@ -491,6 +714,34 @@ export function businessDestinationErrorMessage(error: unknown): string {
     return error.detail;
   }
   return "No se pudo guardar el destino de la carta.";
+}
+
+export function digitalMenuErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof TypeError) {
+    return "No se pudo conectar con el servidor.";
+  }
+  if (error instanceof ApiError) {
+    if (error.detail === "Business is suspended") {
+      return "Este negocio está suspendido. Reactivalo desde Admin para volver a operar.";
+    }
+    if (error.detail === "Digital menu not found") {
+      return "Todavía no encontramos tu Carta Nambre.";
+    }
+    if (error.detail === "Business already has a digital menu") {
+      return "Este negocio ya tiene una Carta Nambre creada.";
+    }
+    if (error.detail === "Menu category not found" || error.detail === "Menu item not found") {
+      return "Ese elemento ya no está disponible. Actualizá la pantalla e intentá nuevamente.";
+    }
+    if (error.detail === "A digital menu must exist before enabling that destination") {
+      return "Primero necesitás crear tu Carta Nambre.";
+    }
+    if (error.status === 422) {
+      return fallback;
+    }
+    return error.detail;
+  }
+  return fallback;
 }
 
 export function qrPreviewErrorMessage(error: unknown): string {

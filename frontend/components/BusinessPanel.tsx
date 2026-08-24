@@ -14,6 +14,8 @@ import {
   Store,
 } from "lucide-react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {DigitalMenuEditor} from "@/components/digital-menu/DigitalMenuEditor";
+import {MenuDestinationSelector} from "@/components/digital-menu/MenuDestinationSelector";
 import {ActivityChart} from "@/components/owner/ActivityChart";
 import {OwnerAppShell} from "@/components/owner/OwnerAppShell";
 import {OwnerSettings} from "@/components/owner/OwnerSettings";
@@ -96,6 +98,7 @@ export function BusinessPanel({
   const [destinationMessage, setDestinationMessage] = useState("");
   const [destinationTypeDraft, setDestinationTypeDraft] = useState<BusinessDestination>("menu_pdf");
   const [externalUrlDraft, setExternalUrlDraft] = useState("");
+  const [hasDigitalMenu, setHasDigitalMenu] = useState(false);
   const [qrDownloadError, setQrDownloadError] = useState("");
   const [qrPreviewVersion, setQrPreviewVersion] = useState(0);
   const loadBusinessesRequestRef = useRef<Promise<void> | null>(null);
@@ -194,9 +197,11 @@ export function BusinessPanel({
   }, [businessId, refresh]);
 
   useEffect(() => {
-    setDestinationTypeDraft(
-      business?.destination_type === "external_url" ? "external_url" : "menu_pdf",
-    );
+    const nextDestination =
+      business?.destination_type === "external_url" || business?.destination_type === "digital_menu"
+        ? business.destination_type
+        : "menu_pdf";
+    setDestinationTypeDraft(nextDestination);
     setExternalUrlDraft(business?.external_url ?? "");
     setDestinationMessage("");
   }, [business?.destination_type, business?.external_url, business?.id]);
@@ -312,7 +317,8 @@ export function BusinessPanel({
         businessId,
         {
           destination_type: destinationTypeDraft,
-          external_url: destinationTypeDraft === "external_url" ? externalUrlDraft : undefined,
+          external_url:
+            destinationTypeDraft === "external_url" ? externalUrlDraft : undefined,
         },
         isPlatformAdmin,
       );
@@ -331,6 +337,10 @@ export function BusinessPanel({
     if (!menu?.current) return "Sin carta";
     return new Date(menu.current.created_at).toLocaleDateString("es-AR");
   }, [menu]);
+
+  function openCurrentExternalUrl() {
+    window.open(business?.external_url ?? "", "_blank", "noopener,noreferrer");
+  }
 
   const qrGroups = useMemo(() => groupQrAssets(qr), [qr]);
   const recentActivity = useMemo(() => sliceDailySeries(series, 7), [series]);
@@ -578,98 +588,127 @@ export function BusinessPanel({
       ) : null}
 
       {view === "menu" ? (
-        isMinimal ? (
-          <section className="owner-view owner-view--minimal" data-testid="menu-layout-minimal">
-            <PageHeader
-              subtitle="Actualizá lo esencial y dejá el resto plegado hasta necesitarlo."
-              title="Mi carta"
+        <section
+          className={`owner-view ${isMinimal ? "owner-view--minimal" : "owner-view--maximal"}`}
+          data-testid={isMinimal ? "menu-layout-minimal" : "menu-layout-maximal"}
+        >
+          <PageHeader
+            subtitle="Elegí la modalidad de tu carta y gestioná el contenido desde un solo lugar."
+            title="Mi carta"
+          />
+          <MenuDestinationSelector
+            business={business}
+            canActivateDigitalMenu={hasDigitalMenu}
+            canMutate={canMutate}
+            externalUrl={externalUrlDraft}
+            message={destinationMessage}
+            onExternalUrlChange={setExternalUrlDraft}
+            onOpenExternalUrl={openCurrentExternalUrl}
+            onSave={saveDestination}
+            onValueChange={setDestinationTypeDraft}
+            saving={savingDestination}
+            value={destinationTypeDraft}
+          />
+
+          {destinationTypeDraft === "digital_menu" ? (
+            <DigitalMenuEditor
+              business={business}
+              canMutate={canMutate}
+              onBusinessRefresh={() => refresh({force: true})}
+              onMenuPresenceChange={setHasDigitalMenu}
+              selectedMode={destinationTypeDraft}
+              token={token}
             />
-            <Card className="panel-stack owner-compact-card">
-              <div className="owner-compact-card__topline">
-                <Badge tone={menu?.current ? "success" : "warning"}>
-                  {menu?.current ? "Publicada" : "Pendiente"}
-                </Badge>
-                <span className="muted">Última actualización: {lastUpdate}</span>
-              </div>
-              <strong>{menu?.current?.original_filename ?? "No hay PDF publicado"}</strong>
-              <p className="muted">
-                Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF sin
-                reimprimir.
-              </p>
-            </Card>
-            <details className="owner-disclosure" open>
-              <summary>Actualizar PDF</summary>
-              <div className="owner-disclosure__content panel-stack">
-                <label className="field">
-                  <span className="field__label">PDF</span>
-                  <input
-                    className="ui-input"
-                    disabled={!canMutate}
-                    type="file"
-                    accept="application/pdf"
-                    onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
-                <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
-                  {uploadingMenu
-                    ? "Guardando..."
-                    : menu?.current
-                      ? "Reemplazar carta"
-                      : "Guardar carta"}
-                </Button>
-                {menuMessage ? (
-                  <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
-                    {menuMessage}
-                  </Alert>
-                ) : null}
-              </div>
-            </details>
-            <details className="owner-disclosure">
-              <summary>Gestionar logo</summary>
-              <div className="owner-disclosure__content panel-stack">
-                <label className="field">
-                  <span className="field__label">Logo</span>
-                  <input
-                    className="ui-input"
-                    disabled={!canMutate}
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
-                {business.logo_url ? (
-                  <div className="asset-preview">
-                    <img
-                      alt={`Logo de ${business.name}`}
-                      className="logo-preview"
-                      src={assetUrl(
-                        `${business.logo_url}?t=${encodeURIComponent(
-                          business.updated_at ?? Date.now().toString(),
-                        )}`,
-                      )}
+          ) : null}
+
+          {destinationTypeDraft === "menu_pdf" ? (
+            <>
+              <Card className="panel-stack owner-compact-card">
+                <div className="owner-compact-card__topline">
+                  <Badge tone={menu?.current ? "success" : "warning"}>
+                    {menu?.current ? "Publicada" : "Pendiente"}
+                  </Badge>
+                  <span className="muted">Última actualización: {lastUpdate}</span>
+                </div>
+                <strong>{menu?.current?.original_filename ?? "No hay PDF publicado"}</strong>
+                <p className="muted">
+                  Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF sin
+                  reimprimir.
+                </p>
+              </Card>
+              <div className="content-grid">
+                <Card className="panel-stack">
+                  <h2>Actualizar PDF</h2>
+                  <label className="field">
+                    <span className="field__label">PDF</span>
+                    <input
+                      accept="application/pdf"
+                      className="ui-input"
+                      disabled={!canMutate}
+                      onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
+                      type="file"
                     />
-                  </div>
-                ) : (
-                  <p className="muted">Todavía no configuraste un logo.</p>
-                )}
-                <Button
-                  disabled={!canMutate || !selectedLogo || uploadingLogo}
-                  onClick={uploadLogo}
-                >
-                  {uploadingLogo ? "Guardando..." : "Guardar logo"}
-                </Button>
-                {logoMessage ? (
-                  <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
-                    {logoMessage}
-                  </Alert>
-                ) : null}
+                  </label>
+                  <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
+                  <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
+                    {uploadingMenu
+                      ? "Guardando..."
+                      : menu?.current
+                        ? "Reemplazar carta"
+                        : "Guardar carta"}
+                  </Button>
+                  {menuMessage ? (
+                    <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
+                      {menuMessage}
+                    </Alert>
+                  ) : null}
+                </Card>
+                <Card className="panel-stack">
+                  <h2>Logo</h2>
+                  <label className="field">
+                    <span className="field__label">Logo</span>
+                    <input
+                      accept="image/png,image/jpeg"
+                      className="ui-input"
+                      disabled={!canMutate}
+                      onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
+                      type="file"
+                    />
+                  </label>
+                  <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
+                  {business.logo_url ? (
+                    <div className="asset-preview">
+                      <img
+                        alt={`Logo de ${business.name}`}
+                        className="logo-preview"
+                        src={assetUrl(
+                          `${business.logo_url}?t=${encodeURIComponent(
+                            business.updated_at ?? Date.now().toString(),
+                          )}`,
+                        )}
+                      />
+                    </div>
+                  ) : (
+                    <EmptyState
+                      description="Todavía no configuraste un logo para el negocio."
+                      title="Sin logo cargado"
+                    />
+                  )}
+                  <Button
+                    disabled={!canMutate || !selectedLogo || uploadingLogo}
+                    onClick={uploadLogo}
+                  >
+                    {uploadingLogo ? "Guardando..." : "Guardar logo"}
+                  </Button>
+                  {logoMessage ? (
+                    <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
+                      {logoMessage}
+                    </Alert>
+                  ) : null}
+                </Card>
               </div>
-            </details>
-            <details className="owner-disclosure">
-              <summary>Ver versiones publicadas</summary>
-              <div className="owner-disclosure__content">
+              <Card className="panel-stack">
+                <h2>Versiones publicadas</h2>
                 <div className="stack-list">
                   {menu?.versions.length ? (
                     menu.versions.map((asset) => (
@@ -686,10 +725,9 @@ export function BusinessPanel({
                           <Button
                             disabled={!canMutate}
                             onClick={() => void rollback(asset.id)}
-                            size="sm"
                             variant="secondary"
                           >
-                            <RotateCcw size={16} /> Restaurar
+                            <RotateCcw size={16} /> Restaurar esta versión
                           </Button>
                         ) : (
                           <Badge tone="success">Activa</Badge>
@@ -703,128 +741,23 @@ export function BusinessPanel({
                     />
                   )}
                 </div>
-              </div>
-            </details>
-          </section>
-        ) : (
-          <section className="owner-view owner-view--maximal" data-testid="menu-layout-maximal">
-            <PageHeader
-              subtitle="Actualizá tu menú cuando quieras sin cambiar el QR de tus mesas."
-              title="Mi carta"
-            />
-            <div className="content-grid">
-              <Card className="panel-stack">
-                <h2>Carta actual</h2>
-                <p>{menu?.current?.original_filename ?? "No hay PDF publicado"}</p>
-                <Badge tone={menu?.current ? "success" : "warning"}>
-                  {menu?.current ? "Publicada" : "Pendiente"}
-                </Badge>
-                <p className="muted">Última actualización: {lastUpdate}</p>
-                <Alert tone="info">
-                  Tu QR no cambia cuando actualizás la carta. Podés reemplazar el PDF todas las
-                  veces que necesites, sin reimprimir nada.
-                </Alert>
               </Card>
-              <Card className="panel-stack">
-                <h2>Logo y PDF</h2>
-                <label className="field">
-                  <span className="field__label">Logo</span>
-                  <input
-                    className="ui-input"
-                    disabled={!canMutate}
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
-                {business.logo_url ? (
-                  <div className="asset-preview">
-                    <img
-                      alt={`Logo de ${business.name}`}
-                      className="logo-preview"
-                      src={assetUrl(
-                        `${business.logo_url}?t=${encodeURIComponent(
-                          business.updated_at ?? Date.now().toString(),
-                        )}`,
-                      )}
-                    />
-                  </div>
-                ) : null}
-                <Button
-                  disabled={!canMutate || !selectedLogo || uploadingLogo}
-                  onClick={uploadLogo}
-                >
-                  {uploadingLogo ? "Guardando..." : "Guardar logo"}
-                </Button>
-                {logoMessage ? (
-                  <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
-                    {logoMessage}
-                  </Alert>
-                ) : null}
+            </>
+          ) : null}
 
-                <label className="field">
-                  <span className="field__label">PDF</span>
-                  <input
-                    className="ui-input"
-                    disabled={!canMutate}
-                    type="file"
-                    accept="application/pdf"
-                    onChange={(event) => setSelectedPdf(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                <p className="muted">{selectedPdf?.name ?? "Ningún PDF seleccionado"}</p>
-                <Button disabled={!canMutate || !selectedPdf || uploadingMenu} onClick={upload}>
-                  {uploadingMenu
-                    ? "Guardando..."
-                    : menu?.current
-                      ? "Reemplazar carta"
-                      : "Guardar carta"}
-                </Button>
-                {menuMessage ? (
-                  <Alert tone={menuMessage.includes("correctamente") ? "success" : "danger"}>
-                    {menuMessage}
-                  </Alert>
-                ) : null}
-              </Card>
-            </div>
+          {destinationTypeDraft === "external_url" ? (
             <Card className="panel-stack">
-              <h2>Versiones publicadas</h2>
-              <div className="stack-list">
-                {menu?.versions.length ? (
-                  menu.versions.map((asset) => (
-                    <div className="list-row list-row--actions" key={asset.id}>
-                      <div>
-                        <strong>
-                          v{asset.version} · {asset.original_filename}
-                        </strong>
-                        <p className="muted">
-                          {asset.status === "active" ? "Carta actual" : "Versión anterior"}
-                        </p>
-                      </div>
-                      {asset.status === "archived" ? (
-                        <Button
-                          disabled={!canMutate}
-                          onClick={() => void rollback(asset.id)}
-                          variant="secondary"
-                        >
-                          <RotateCcw size={16} /> Restaurar esta versión
-                        </Button>
-                      ) : (
-                        <Badge tone="success">Activa</Badge>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState
-                    description="Subí tu primer PDF para comenzar a usar Nambre."
-                    title="Todavía no subiste una carta"
-                  />
-                )}
-              </div>
+              <h2>Carta digital propia</h2>
+              <p className="muted">
+                Cuando guardes esta modalidad, tu QR seguirá siendo el mismo pero redirigirá a la
+                URL externa que configures arriba.
+              </p>
+              <Alert tone="info">
+                Usá esta opción si tu negocio ya tiene una carta web fuera de Nambre.
+              </Alert>
             </Card>
-          </section>
-        )
+          ) : null}
+        </section>
       ) : null}
 
       {view === "qr" ? (
@@ -897,73 +830,26 @@ export function BusinessPanel({
               </div>
             </Card>
             <Card className="panel-stack">
-              <h2>¿Dónde está tu carta?</h2>
+              <h2>Gestión de carta</h2>
               <p className="muted">
-                Podés seguir usando la carta que ya tenés. Tu QR de Nambre seguirá siendo el mismo
-                aunque cambies este enlace más adelante.
+                La modalidad de carta y el editor ahora viven en <strong>Mi carta</strong>, para
+                que no haya controles duplicados.
               </p>
-              <label className="login-legal__checkbox">
-                <input
-                  checked={destinationTypeDraft === "menu_pdf"}
-                  disabled={!canMutate || savingDestination}
-                  name="business-destination"
-                  onChange={() => setDestinationTypeDraft("menu_pdf")}
-                  type="radio"
-                />
-                <span>Usar mi carta en Nambre</span>
-              </label>
-              <label className="login-legal__checkbox">
-                <input
-                  checked={destinationTypeDraft === "external_url"}
-                  disabled={!canMutate || savingDestination}
-                  name="business-destination"
-                  onChange={() => setDestinationTypeDraft("external_url")}
-                  type="radio"
-                />
-                <span>Usar una carta que ya tengo</span>
-              </label>
-              {destinationTypeDraft === "external_url" ? (
-                <label className="field">
-                  <span className="field__label">URL de tu carta</span>
-                  <input
-                    className="ui-input"
-                    disabled={!canMutate || savingDestination}
-                    onChange={(event) => setExternalUrlDraft(event.target.value)}
-                    placeholder="https://tu-carta.com/menu"
-                    type="url"
-                    value={externalUrlDraft}
-                  />
-                </label>
-              ) : null}
               <p className="muted">
                 Destino actual: {businessDestinationLabel(business.destination_type ?? "menu_pdf")}
               </p>
               <div className="actions">
-                <Button
-                  disabled={
-                    !canMutate ||
-                    savingDestination ||
-                    (destinationTypeDraft === "external_url" && !externalUrlDraft.trim())
-                  }
-                  onClick={() => void saveDestination()}
-                >
-                  {savingDestination ? "Guardando..." : "Guardar"}
-                </Button>
+                <Button onClick={() => setView("menu")}>Ir a Mi carta</Button>
                 <Button
                   disabled={
                     (business.destination_type ?? "menu_pdf") !== "external_url" || !business.external_url
                   }
-                  onClick={() => window.open(business.external_url ?? "", "_blank", "noopener,noreferrer")}
+                  onClick={openCurrentExternalUrl}
                   variant="secondary"
                 >
                   Abrir/probar enlace actual
                 </Button>
               </div>
-              {destinationMessage ? (
-                <Alert tone={destinationMessage.includes("correctamente") ? "success" : "danger"}>
-                  {destinationMessage}
-                </Alert>
-              ) : null}
               {business.logo_url ? (
                 <div className="asset-preview">
                   <img
@@ -982,9 +868,6 @@ export function BusinessPanel({
                   title="Todavía no configuraste un logo"
                 />
               )}
-              <Button onClick={() => setView("menu")} variant="secondary">
-                Ir a Mi carta
-              </Button>
             </Card>
           </div>
         </section>

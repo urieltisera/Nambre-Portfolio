@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -42,6 +44,11 @@ class MembershipRole(StrEnum):
 class MenuAssetStatus(StrEnum):
     active = "active"
     archived = "archived"
+
+
+class DigitalMenuStatus(StrEnum):
+    draft = "draft"
+    published = "published"
 
 
 class DestinationType(StrEnum):
@@ -160,6 +167,59 @@ class DynamicLink(Base):
     )
     destination_id: Mapped[str] = mapped_column(String(36))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class DigitalMenu(Base):
+    __tablename__ = "digital_menus"
+    __table_args__ = (UniqueConstraint("business_id", name="uq_digital_menu_business"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    business_id: Mapped[str] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[DigitalMenuStatus] = mapped_column(
+        Enum(DigitalMenuStatus), default=DigitalMenuStatus.draft
+    )
+    template_key: Mapped[str] = mapped_column(String(64), default="modern")
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class MenuCategory(Base):
+    __tablename__ = "menu_categories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    digital_menu_id: Mapped[str] = mapped_column(
+        ForeignKey("digital_menus.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class MenuItem(Base):
+    __tablename__ = "menu_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    category_id: Mapped[str] = mapped_column(
+        ForeignKey("menu_categories.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(String(3))
+    image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
@@ -286,3 +346,7 @@ class AuditEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, index=True
     )
+
+
+Index("ix_menu_categories_menu_position", MenuCategory.digital_menu_id, MenuCategory.position)
+Index("ix_menu_items_category_position", MenuItem.category_id, MenuItem.position)

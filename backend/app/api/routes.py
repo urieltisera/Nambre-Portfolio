@@ -48,12 +48,15 @@ from app.models import (
     Business,
     BusinessStatus,
     DestinationType,
+    DigitalMenu,
     DynamicLink,
     InvitationToken,
     LegalAcceptance,
     LegalDocumentType,
     Membership,
     MenuAsset,
+    MenuCategory,
+    MenuItem,
     QRCode,
     User,
 )
@@ -65,6 +68,9 @@ from app.schemas import (
     BusinessPatch,
     ChangePasswordIn,
     DailyScanOut,
+    DigitalMenuCreateIn,
+    DigitalMenuOut,
+    DigitalMenuPatchIn,
     InvitationAcceptIn,
     InvitationCreateOut,
     LegalAcceptIn,
@@ -72,11 +78,18 @@ from app.schemas import (
     LegalStatusOut,
     LoginIn,
     MenuAssetOut,
+    MenuCategoryCreateIn,
+    MenuCategoryOut,
+    MenuCategoryPatchIn,
+    MenuItemCreateIn,
+    MenuItemOut,
+    MenuItemPatchIn,
     MenuStateOut,
     MessageOut,
     OwnerAssignIn,
     PasswordResetConfirmIn,
     PasswordResetRequestIn,
+    PublicDigitalMenuOut,
     QRCodeOut,
     RollbackIn,
     TokenOut,
@@ -89,6 +102,21 @@ from app.services.auth_service import (
     change_password,
     issue_password_reset_token,
     reset_password,
+)
+from app.services.digital_menu_service import (
+    create_business_digital_menu,
+    create_menu_category,
+    create_menu_item,
+    get_business_digital_menu,
+    get_public_digital_menu_payload,
+    list_menu_categories,
+    list_menu_items,
+    remove_menu_category,
+    remove_menu_item,
+    sync_current_destination,
+    update_business_digital_menu,
+    update_menu_category,
+    update_menu_item,
 )
 from app.services.email_service import (
     EmailDeliveryError,
@@ -437,6 +465,7 @@ def patch_business(
         ensure_dynamic_link(db, business_id)
     for key, value in data.items():
         setattr(business, key, value)
+    sync_current_destination(db, business)
     business.updated_at = datetime.now(UTC)
     db.commit()
     return business
@@ -509,6 +538,323 @@ def menu_state(
         versions=versions_out,
         public_code=link.public_code if link else None,
     )
+
+
+@router.get("/api/businesses/{business_id}/digital-menu", response_model=DigitalMenuOut)
+def get_digital_menu(
+    business_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> DigitalMenu:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    return get_business_digital_menu(db, business_id)
+
+
+@router.post("/api/businesses/{business_id}/digital-menu", response_model=DigitalMenuOut)
+def create_digital_menu(
+    business_id: str,
+    payload: DigitalMenuCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DigitalMenu:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    business = require_operable_business(db, user, business_id)
+    menu = create_business_digital_menu(
+        db,
+        business,
+        name=payload.name,
+        template_key=payload.template_key,
+        status_value=payload.status,
+        is_published=payload.is_published,
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.created",
+        actor_user_id=user.id,
+        business_id=business.id,
+        target_type="digital_menu",
+        target_id=menu.id,
+        details={"template_key": menu.template_key},
+    )
+    db.commit()
+    return menu
+
+
+@router.patch("/api/businesses/{business_id}/digital-menu/{menu_id}", response_model=DigitalMenuOut)
+def patch_digital_menu(
+    business_id: str,
+    menu_id: str,
+    payload: DigitalMenuPatchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DigitalMenu:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    business = require_operable_business(db, user, business_id)
+    menu = get_business_digital_menu(db, business_id, menu_id)
+    data = payload.model_dump(exclude_unset=True)
+    updated = update_business_digital_menu(
+        db,
+        business,
+        menu,
+        name=data.get("name"),
+        template_key=data.get("template_key"),
+        status_value=data.get("status"),
+        is_published=data.get("is_published"),
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.updated",
+        actor_user_id=user.id,
+        business_id=business.id,
+        target_type="digital_menu",
+        target_id=menu.id,
+        details=payload.model_dump(exclude_unset=True, mode="json"),
+    )
+    db.commit()
+    return updated
+
+
+@router.get(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/categories",
+    response_model=list[MenuCategoryOut],
+)
+def get_digital_menu_categories(
+    business_id: str,
+    menu_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[MenuCategory]:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    return list_menu_categories(db, business_id, menu_id)
+
+
+@router.post(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/categories",
+    response_model=MenuCategoryOut,
+)
+def post_digital_menu_category(
+    business_id: str,
+    menu_id: str,
+    payload: MenuCategoryCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MenuCategory:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    require_operable_business(db, user, business_id)
+    category = create_menu_category(
+        db,
+        business_id=business_id,
+        menu_id=menu_id,
+        name=payload.name,
+        description=payload.description,
+        position=payload.position,
+        is_visible=payload.is_visible,
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.category_created",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_category",
+        target_id=category.id,
+        details={"menu_id": menu_id},
+    )
+    db.commit()
+    return category
+
+
+@router.patch(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/categories/{category_id}",
+    response_model=MenuCategoryOut,
+)
+def patch_digital_menu_category(
+    business_id: str,
+    menu_id: str,
+    category_id: str,
+    payload: MenuCategoryPatchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MenuCategory:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    require_operable_business(db, user, business_id)
+    data = payload.model_dump(exclude_unset=True)
+    category = update_menu_category(
+        db,
+        business_id=business_id,
+        menu_id=menu_id,
+        category_id=category_id,
+        name=data.get("name"),
+        description=data.get("description"),
+        position=data.get("position"),
+        is_visible=data.get("is_visible"),
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.category_updated",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_category",
+        target_id=category.id,
+        details=payload.model_dump(exclude_unset=True, mode="json"),
+    )
+    db.commit()
+    return category
+
+
+@router.delete("/api/businesses/{business_id}/digital-menu/{menu_id}/categories/{category_id}")
+def delete_digital_menu_category(
+    business_id: str,
+    menu_id: str,
+    category_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MessageOut:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    require_operable_business(db, user, business_id)
+    remove_menu_category(db, business_id=business_id, menu_id=menu_id, category_id=category_id)
+    record_audit_event(
+        db,
+        event_type="digital_menu.category_deleted",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_category",
+        target_id=category_id,
+        details={"menu_id": menu_id},
+    )
+    db.commit()
+    return MessageOut(message="Category deleted")
+
+
+@router.get(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/items",
+    response_model=list[MenuItemOut],
+)
+def get_digital_menu_items(
+    business_id: str,
+    menu_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[MenuItem]:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    return list_menu_items(db, business_id, menu_id)
+
+
+@router.post(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/categories/{category_id}/items",
+    response_model=MenuItemOut,
+)
+def post_digital_menu_item(
+    business_id: str,
+    menu_id: str,
+    category_id: str,
+    payload: MenuItemCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MenuItem:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    require_operable_business(db, user, business_id)
+    item = create_menu_item(
+        db,
+        business_id=business_id,
+        menu_id=menu_id,
+        category_id=category_id,
+        name=payload.name,
+        description=payload.description,
+        price=payload.price,
+        currency=payload.currency,
+        image_url=payload.image_url,
+        position=payload.position,
+        is_visible=payload.is_visible,
+        is_available=payload.is_available,
+        is_featured=payload.is_featured,
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.item_created",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_item",
+        target_id=item.id,
+        details={"menu_id": menu_id, "category_id": category_id},
+    )
+    db.commit()
+    return item
+
+
+@router.patch(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}",
+    response_model=MenuItemOut,
+)
+def patch_digital_menu_item(
+    business_id: str,
+    menu_id: str,
+    item_id: str,
+    payload: MenuItemPatchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MenuItem:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    require_operable_business(db, user, business_id)
+    data = payload.model_dump(exclude_unset=True)
+    item = update_menu_item(
+        db,
+        business_id=business_id,
+        menu_id=menu_id,
+        item_id=item_id,
+        name=data.get("name"),
+        description=data.get("description"),
+        price=data.get("price"),
+        currency=data.get("currency"),
+        image_url=data.get("image_url"),
+        position=data.get("position"),
+        is_visible=data.get("is_visible"),
+        is_available=data.get("is_available"),
+        is_featured=data.get("is_featured"),
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.item_updated",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_item",
+        target_id=item.id,
+        details=payload.model_dump(exclude_unset=True, mode="json"),
+    )
+    db.commit()
+    return item
+
+
+@router.delete("/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}")
+def delete_digital_menu_item(
+    business_id: str,
+    menu_id: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MessageOut:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    require_operable_business(db, user, business_id)
+    remove_menu_item(db, business_id=business_id, menu_id=menu_id, item_id=item_id)
+    record_audit_event(
+        db,
+        event_type="digital_menu.item_deleted",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_item",
+        target_id=item_id,
+        details={"menu_id": menu_id},
+    )
+    db.commit()
+    return MessageOut(message="Item deleted")
 
 
 @router.post("/api/businesses/{business_id}/menu", response_model=MenuStateOut)
@@ -631,6 +977,16 @@ def public_redirect(
             status_code=302,
             headers=_dynamic_public_cache_headers(),
         )
+    if business.destination_type == DestinationType.digital_menu:
+        if link.destination_id == "":
+            db.commit()
+            raise HTTPException(status_code=404, detail="Not found")
+        db.commit()
+        return RedirectResponse(
+            url=_public_digital_menu_url(public_code),
+            status_code=302,
+            headers=_dynamic_public_cache_headers(),
+        )
     if link.destination_id == "":
         db.commit()
         raise HTTPException(status_code=404, detail="Not found")
@@ -639,6 +995,32 @@ def public_redirect(
         url=_public_menu_url(public_code),
         status_code=302,
         headers=_dynamic_public_cache_headers(),
+    )
+
+
+@router.get("/m/{public_code}/digital-menu", response_model=PublicDigitalMenuOut)
+def public_digital_menu(
+    public_code: str, db: Session = Depends(get_db)
+) -> PublicDigitalMenuOut | PlainTextResponse:
+    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
+    if link is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    business = db.get(Business, link.business_id)
+    if (
+        business is None
+        or not link.is_active
+        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
+    ):
+        return PlainTextResponse(
+            "Este menú no se encuentra disponible actualmente.", status_code=403
+        )
+    _, menu, categories = get_public_digital_menu_payload(db, public_code)
+    return PublicDigitalMenuOut(
+        id=menu.id,
+        business_id=menu.business_id,
+        name=menu.name,
+        template_key=menu.template_key,
+        categories=categories,
     )
 
 
@@ -696,8 +1078,7 @@ def admin_create_business(
     db.add(business)
     try:
         db.flush()
-        if business.destination_type == DestinationType.external_url:
-            ensure_dynamic_link(db, business.id)
+        sync_current_destination(db, business)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -720,10 +1101,9 @@ def admin_patch_business(
     if business is None:
         raise HTTPException(status_code=404, detail="Business not found")
     data = _validated_business_patch(payload.model_dump(exclude_unset=True))
-    if data.get("destination_type") == DestinationType.external_url:
-        ensure_dynamic_link(db, business_id)
     for key, value in data.items():
         setattr(business, key, value)
+    sync_current_destination(db, business)
     business.updated_at = datetime.now(UTC)
     record_audit_event(
         db,
@@ -924,6 +1304,10 @@ def _validated_business_patch(data: dict[str, object]) -> dict[str, object]:
 
 def _public_menu_url(public_code: str) -> str:
     return f"/m/{public_code}/menu.pdf"
+
+
+def _public_digital_menu_url(public_code: str) -> str:
+    return f"/m/{public_code}/digital-menu"
 
 
 def _list_all_businesses(db: Session) -> list[Business]:

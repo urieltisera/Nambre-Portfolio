@@ -35,6 +35,19 @@ class BusinessStatus(StrEnum):
     suspended = "suspended"
 
 
+class BusinessPlanKey(StrEnum):
+    essential = "essential"
+    premium = "premium"
+
+
+class BusinessFeatureKey(StrEnum):
+    digital_menu = "digital_menu"
+    artistic_qr = "artistic_qr"
+    advanced_analytics = "advanced_analytics"
+    scheduled_promotions = "scheduled_promotions"
+    advanced_branding = "advanced_branding"
+
+
 class MembershipRole(StrEnum):
     owner = "owner"
     manager = "manager"
@@ -91,6 +104,9 @@ class Business(Base):
     name: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    plan_key: Mapped[BusinessPlanKey] = mapped_column(
+        Enum(BusinessPlanKey), default=BusinessPlanKey.essential
+    )
     destination_type: Mapped[DestinationType] = mapped_column(
         Enum(DestinationType), default=DestinationType.menu_pdf
     )
@@ -102,6 +118,12 @@ class Business(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="business")
+
+    @property
+    def features(self) -> dict[str, bool]:
+        from app.services.entitlements import get_business_feature_flags
+
+        return get_business_feature_flags(self)
 
 
 class User(Base):

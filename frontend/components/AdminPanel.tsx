@@ -11,8 +11,12 @@ import {
   adminBusinessActions,
   businessDestinationErrorMessage,
   businessDestinationLabel,
+  businessHasFeature,
+  businessPlanLabel,
   businessStatusLabel,
   Business,
+  BusinessDestination,
+  BusinessPlanKey,
   inviteClient,
   inviteClientErrorMessage,
   listBusinesses,
@@ -34,8 +38,9 @@ export function AdminPanel({
   const [inviting, setInviting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [destinationDrafts, setDestinationDrafts] = useState<
-    Record<string, {destination_type: "menu_pdf" | "external_url"; external_url: string}>
+    Record<string, {destination_type: BusinessDestination; external_url: string}>
   >({});
+  const [planDrafts, setPlanDrafts] = useState<Record<string, BusinessPlanKey>>({});
   const [error, setError] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
 
@@ -50,11 +55,17 @@ export function AdminPanel({
           items.map((item) => [
             item.id,
             {
-              destination_type: item.destination_type === "external_url" ? "external_url" : "menu_pdf",
+              destination_type:
+                item.destination_type === "external_url" || item.destination_type === "digital_menu"
+                  ? item.destination_type
+                  : "menu_pdf",
               external_url: item.external_url ?? "",
             },
           ]),
         ),
+      );
+      setPlanDrafts(
+        Object.fromEntries(items.map((item) => [item.id, item.plan_key ?? "essential"])),
       );
     } catch {
       setError("No se pudieron cargar los negocios.");
@@ -135,6 +146,41 @@ export function AdminPanel({
     }
   }
 
+  async function updatePlan(businessId: string) {
+    const planKey = planDrafts[businessId];
+    if (!planKey) return;
+    setSavingId(businessId);
+    setError("");
+    try {
+      const updated = await request<Business>(`/admin/businesses/${businessId}`, token, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({plan_key: planKey}),
+      });
+      setBusinesses((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setPlanDrafts((current) => ({
+        ...current,
+        [businessId]: updated.plan_key ?? "essential",
+      }));
+      setDestinationDrafts((current) => ({
+        ...current,
+        [businessId]: {
+          destination_type:
+            updated.destination_type === "external_url" || updated.destination_type === "digital_menu"
+              ? updated.destination_type
+              : "menu_pdf",
+          external_url: updated.external_url ?? "",
+        },
+      }));
+    } catch {
+      setError("No se pudo actualizar el plan del negocio.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   return (
     <section className="admin-shell">
       <div className="admin-shell__header">
@@ -164,6 +210,7 @@ export function AdminPanel({
                 <div>
                   <strong>{item.name}</strong>
                   <p className="muted">{businessStatusLabel(item.status)}</p>
+                  <p className="muted">Plan: {businessPlanLabel(item.plan_key)}</p>
                   <p className="muted">
                     Destino: {businessDestinationLabel(item.destination_type ?? "menu_pdf")}
                   </p>
@@ -188,7 +235,7 @@ export function AdminPanel({
                       setDestinationDrafts((current) => ({
                         ...current,
                         [item.id]: {
-                          destination_type: event.target.value as "menu_pdf" | "external_url",
+                          destination_type: event.target.value as BusinessDestination,
                           external_url: current[item.id]?.external_url ?? item.external_url ?? "",
                         },
                       }))
@@ -196,6 +243,12 @@ export function AdminPanel({
                   >
                     <option value="menu_pdf">Carta en Nambre</option>
                     <option value="external_url">Carta externa</option>
+                    <option
+                      disabled={!businessHasFeature(item, "digital_menu")}
+                      value="digital_menu"
+                    >
+                      Carta Nambre
+                    </option>
                   </select>
                   {(destinationDrafts[item.id]?.destination_type ?? "menu_pdf") === "external_url" ? (
                     <input
@@ -227,6 +280,28 @@ export function AdminPanel({
                     variant="secondary"
                   >
                     {savingId === item.id ? "Guardando..." : "Guardar destino"}
+                  </Button>
+                  <select
+                    aria-label={`Plan de ${item.name}`}
+                    className="ui-input"
+                    disabled={savingId === item.id}
+                    value={planDrafts[item.id] ?? "essential"}
+                    onChange={(event) =>
+                      setPlanDrafts((current) => ({
+                        ...current,
+                        [item.id]: event.target.value as BusinessPlanKey,
+                      }))
+                    }
+                  >
+                    <option value="essential">Essential</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                  <Button
+                    disabled={savingId === item.id}
+                    onClick={() => void updatePlan(item.id)}
+                    variant="secondary"
+                  >
+                    {savingId === item.id ? "Guardando..." : "Guardar plan"}
                   </Button>
                 </div>
               </div>

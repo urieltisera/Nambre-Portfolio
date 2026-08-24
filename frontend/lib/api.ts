@@ -1,8 +1,20 @@
+export type BusinessPlanKey = "essential" | "premium";
+
+export type BusinessFeatures = {
+  digital_menu?: boolean;
+  artistic_qr?: boolean;
+  advanced_analytics?: boolean;
+  scheduled_promotions?: boolean;
+  advanced_branding?: boolean;
+};
+
 export type Business = {
   id: string;
   name: string;
   slug: string;
   logo_url: string | null;
+  plan_key?: BusinessPlanKey;
+  features?: BusinessFeatures;
   destination_type?: "menu_pdf" | "external_url" | "digital_menu" | "promo" | "landing_page";
   external_url?: string | null;
   status: "demo" | "active" | "suspended";
@@ -378,6 +390,17 @@ export function canOperateBusiness(status: Business["status"]): boolean {
   return status !== "suspended";
 }
 
+export function businessPlanLabel(planKey: Business["plan_key"]): "Essential" | "Premium" {
+  return planKey === "premium" ? "Premium" : "Essential";
+}
+
+export function businessHasFeature(
+  business: Pick<Business, "features"> | null | undefined,
+  feature: keyof BusinessFeatures,
+): boolean {
+  return business?.features?.[feature] === true;
+}
+
 export function adminBusinessActions(status: Business["status"]): BusinessStatusAction[] {
   if (status === "demo") {
     return [
@@ -711,6 +734,9 @@ export function businessDestinationErrorMessage(error: unknown): string {
     if (error.detail === "Business is suspended") {
       return "Este negocio está suspendido. Reactivalo desde Admin para volver a operar.";
     }
+    if (error.detail === "Feature not enabled: digital_menu") {
+      return "Carta Nambre está disponible solo en Premium.";
+    }
     return error.detail;
   }
   return "No se pudo guardar el destino de la carta.";
@@ -735,6 +761,9 @@ export function digitalMenuErrorMessage(error: unknown, fallback: string): strin
     }
     if (error.detail === "A digital menu must exist before enabling that destination") {
       return "Primero necesitás crear tu Carta Nambre.";
+    }
+    if (error.detail === "Feature not enabled: digital_menu") {
+      return "Carta Nambre está disponible solo en Premium.";
     }
     if (error.status === 422) {
       return fallback;

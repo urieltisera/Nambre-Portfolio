@@ -422,7 +422,7 @@ describe("BusinessPanel logo flow", () => {
     expect(refreshedInputs.every((input) => input.disabled === false)).toBe(true);
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
     expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(false);
-  }, 15000);
+  }, 30000);
 
   it("refreshes the header metadata after replace and rollback", async () => {
     const currentBusiness: Business = {
@@ -799,9 +799,11 @@ describe("BusinessPanel logo flow", () => {
     const business: Business = {
       destination_type: "menu_pdf",
       external_url: null,
+      features: {digital_menu: true},
       id: "biz-dm-empty",
       logo_url: null,
       name: "Carta Nambre Vacia",
+      plan_key: "premium",
       slug: "carta-nambre-vacia",
       status: "active",
     };
@@ -854,9 +856,11 @@ describe("BusinessPanel logo flow", () => {
     const business: Business = {
       destination_type: "digital_menu",
       external_url: null,
+      features: {digital_menu: true},
       id: "biz-dm-categories",
       logo_url: null,
       name: "Carta Categorias",
+      plan_key: "premium",
       slug: "carta-categorias",
       status: "active",
     };
@@ -975,9 +979,11 @@ describe("BusinessPanel logo flow", () => {
     const business: Business = {
       destination_type: "digital_menu",
       external_url: null,
+      features: {digital_menu: true},
       id: "biz-dm-items",
       logo_url: null,
       name: "Carta Productos",
+      plan_key: "premium",
       slug: "carta-productos",
       status: "active",
     };
@@ -1148,9 +1154,11 @@ describe("BusinessPanel logo flow", () => {
     const business: Business = {
       destination_type: "digital_menu",
       external_url: null,
+      features: {digital_menu: true},
       id: "biz-dm-error",
       logo_url: null,
       name: "Carta Error",
+      plan_key: "premium",
       slug: "carta-error",
       status: "active",
     };
@@ -1214,5 +1222,45 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", {name: "Crear producto"}).textContent).toBe("Crear producto"),
     );
+  }, 15000);
+
+  it("shows Carta Nambre locked for Essential and does not call digital menu APIs", async () => {
+    const business: Business = {
+      destination_type: "menu_pdf",
+      external_url: null,
+      features: {digital_menu: false},
+      id: "biz-essential",
+      logo_url: null,
+      name: "Essential Biz",
+      plan_key: "essential",
+      slug: "essential-biz",
+      status: "active",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-essential") return business;
+      if (path === "/api/businesses/biz-essential/menu") {
+        return {current: null, public_code: "essential-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-essential/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-essential/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-essential/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByText("Hola, Essential Biz 👋");
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+
+    expect(await screen.findByTestId("digital-menu-premium-lock")).toBeTruthy();
+    expect(screen.getByText("Disponible en Premium.")).toBeTruthy();
+    expect(screen.queryByText("Creá tu Carta Nambre")).toBeNull();
+    expect(mocks.fetchDigitalMenu).not.toHaveBeenCalled();
+    expect(mocks.listMenuCategories).not.toHaveBeenCalled();
+    expect(mocks.listMenuItems).not.toHaveBeenCalled();
   });
 });

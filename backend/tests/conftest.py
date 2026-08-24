@@ -22,6 +22,7 @@ from app.main import create_app  # noqa: E402
 from app.models import (  # noqa: E402
     AcceptanceMethod,
     Business,
+    BusinessPlanKey,
     BusinessStatus,
     LegalAcceptance,
     Membership,
@@ -85,9 +86,13 @@ def make_user(
 
 
 def make_business(
-    db: Session, name: str, slug: str, status: BusinessStatus = BusinessStatus.active
+    db: Session,
+    name: str,
+    slug: str,
+    status: BusinessStatus = BusinessStatus.active,
+    plan_key: BusinessPlanKey = BusinessPlanKey.essential,
 ) -> Business:
-    business = Business(name=name, slug=slug, status=status)
+    business = Business(name=name, slug=slug, status=status, plan_key=plan_key)
     db.add(business)
     db.commit()
     return business

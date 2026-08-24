@@ -2,7 +2,7 @@
 
 import React, {useMemo, useState} from "react";
 import {ArrowRight, LogOut, Moon, Monitor, Sun} from "lucide-react";
-import {Business, User, changePassword, userRoleLabel} from "@/lib/api";
+import {Business, User, businessPlanLabel, changePassword, userRoleLabel} from "@/lib/api";
 import {ThemePreference, VisualStyle} from "@/lib/appearance-preferences";
 import {useAppearance} from "@/components/ui/AppearanceProvider";
 import {Alert} from "@/components/ui/Alert";
@@ -109,6 +109,12 @@ export function OwnerSettings({
               <dt>Rol</dt>
               <dd>{userRoleLabel(user)}</dd>
             </div>
+            {business ? (
+              <div>
+                <dt>Plan</dt>
+                <dd>{businessPlanLabel(business.plan_key)}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Tema activo</dt>
               <dd>{resolvedTheme === "dark" ? "Oscuro" : "Claro"}</dd>

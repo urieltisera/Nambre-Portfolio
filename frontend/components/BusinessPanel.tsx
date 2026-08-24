@@ -31,6 +31,7 @@ import {AnalyticsWindow, sliceDailySeries, toActivityPoints} from "@/lib/analyti
 import {
   assetUrl,
   businessDestinationErrorMessage,
+  businessHasFeature,
   businessDestinationLabel,
   canOperateBusiness,
   businessStatusLabel,
@@ -111,6 +112,7 @@ export function BusinessPanel({
   const isSuspended = business?.status === "suspended";
   const canMutate = business ? canOperateBusiness(business.status) : false;
   const isMinimal = visualStyle === "minimal";
+  const canUseDigitalMenu = businessHasFeature(business, "digital_menu");
 
   const loadBusinesses = useCallback(async () => {
     if (loadBusinessesRequestRef.current) {
@@ -198,13 +200,14 @@ export function BusinessPanel({
 
   useEffect(() => {
     const nextDestination =
-      business?.destination_type === "external_url" || business?.destination_type === "digital_menu"
+      business?.destination_type === "external_url" ||
+      (business?.destination_type === "digital_menu" && canUseDigitalMenu)
         ? business.destination_type
         : "menu_pdf";
     setDestinationTypeDraft(nextDestination);
     setExternalUrlDraft(business?.external_url ?? "");
     setDestinationMessage("");
-  }, [business?.destination_type, business?.external_url, business?.id]);
+  }, [business?.destination_type, business?.external_url, business?.id, canUseDigitalMenu]);
 
   useEffect(() => {
     function syncFreshState() {
@@ -599,6 +602,7 @@ export function BusinessPanel({
           <MenuDestinationSelector
             business={business}
             canActivateDigitalMenu={hasDigitalMenu}
+            canUseDigitalMenu={canUseDigitalMenu}
             canMutate={canMutate}
             externalUrl={externalUrlDraft}
             message={destinationMessage}
@@ -610,7 +614,7 @@ export function BusinessPanel({
             value={destinationTypeDraft}
           />
 
-          {destinationTypeDraft === "digital_menu" ? (
+          {destinationTypeDraft === "digital_menu" && canUseDigitalMenu ? (
             <DigitalMenuEditor
               business={business}
               canMutate={canMutate}

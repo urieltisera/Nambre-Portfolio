@@ -46,6 +46,7 @@ from app.legal import CURRENT_LEGAL_VERSIONS
 from app.models import (
     AcceptanceMethod,
     Business,
+    BusinessFeatureKey,
     BusinessStatus,
     DestinationType,
     DigitalMenu,
@@ -125,6 +126,11 @@ from app.services.email_service import (
     send_invitation_email,
     send_password_reset_email,
 )
+from app.services.entitlements import (
+    business_has_feature,
+    plan_includes_feature,
+    require_business_feature,
+)
 from app.services.invitation_service import (
     InvitationError,
     InvitationTokenError,
@@ -138,7 +144,6 @@ from app.services.legal_service import (
     pending_legal_documents,
 )
 from app.services.menu_service import (
-    ensure_dynamic_link,
     get_active_menu,
     rollback_menu,
     upload_menu_pdf,
@@ -457,12 +462,18 @@ def patch_business(
         raise HTTPException(status_code=404, detail="Business not found")
     data = payload.model_dump(exclude_unset=True)
     if not user.is_platform_admin:
+        if "plan_key" in data:
+            raise HTTPException(status_code=403, detail="Forbidden")
         data.pop("status", None)
         if data:
             business = require_operable_business(db, user, business_id)
     data = _validated_business_patch(data)
-    if data.get("destination_type") == DestinationType.external_url:
-        ensure_dynamic_link(db, business_id)
+    next_plan_key = data.get("plan_key", business.plan_key)
+    if (
+        data.get("destination_type") == DestinationType.digital_menu
+        and not plan_includes_feature(next_plan_key, BusinessFeatureKey.digital_menu)
+    ):
+        raise HTTPException(status_code=403, detail="Feature not enabled: digital_menu")
     for key, value in data.items():
         setattr(business, key, value)
     sync_current_destination(db, business)
@@ -546,6 +557,8 @@ def get_digital_menu(
 ) -> DigitalMenu:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     return get_business_digital_menu(db, business_id)
 
 
@@ -559,6 +572,7 @@ def create_digital_menu(
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
     business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     menu = create_business_digital_menu(
         db,
         business,
@@ -591,6 +605,7 @@ def patch_digital_menu(
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
     business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     menu = get_business_digital_menu(db, business_id, menu_id)
     data = payload.model_dump(exclude_unset=True)
     updated = update_business_digital_menu(
@@ -627,6 +642,8 @@ def get_digital_menu_categories(
 ) -> list[MenuCategory]:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     return list_menu_categories(db, business_id, menu_id)
 
 
@@ -643,7 +660,8 @@ def post_digital_menu_category(
 ) -> MenuCategory:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    require_operable_business(db, user, business_id)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     category = create_menu_category(
         db,
         business_id=business_id,
@@ -680,7 +698,8 @@ def patch_digital_menu_category(
 ) -> MenuCategory:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    require_operable_business(db, user, business_id)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     data = payload.model_dump(exclude_unset=True)
     category = update_menu_category(
         db,
@@ -715,7 +734,8 @@ def delete_digital_menu_category(
 ) -> MessageOut:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    require_operable_business(db, user, business_id)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     remove_menu_category(db, business_id=business_id, menu_id=menu_id, category_id=category_id)
     record_audit_event(
         db,
@@ -742,6 +762,8 @@ def get_digital_menu_items(
 ) -> list[MenuItem]:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     return list_menu_items(db, business_id, menu_id)
 
 
@@ -759,7 +781,8 @@ def post_digital_menu_item(
 ) -> MenuItem:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    require_operable_business(db, user, business_id)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     item = create_menu_item(
         db,
         business_id=business_id,
@@ -802,7 +825,8 @@ def patch_digital_menu_item(
 ) -> MenuItem:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    require_operable_business(db, user, business_id)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     data = payload.model_dump(exclude_unset=True)
     item = update_menu_item(
         db,
@@ -842,7 +866,8 @@ def delete_digital_menu_item(
 ) -> MessageOut:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
-    require_operable_business(db, user, business_id)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
     remove_menu_item(db, business_id=business_id, menu_id=menu_id, item_id=item_id)
     record_audit_event(
         db,
@@ -978,6 +1003,11 @@ def public_redirect(
             headers=_dynamic_public_cache_headers(),
         )
     if business.destination_type == DestinationType.digital_menu:
+        if not business_has_feature(business, BusinessFeatureKey.digital_menu):
+            db.commit()
+            return PlainTextResponse(
+                "Este menú no se encuentra disponible actualmente.", status_code=403
+            )
         if link.destination_id == "":
             db.commit()
             raise HTTPException(status_code=404, detail="Not found")
@@ -1011,6 +1041,10 @@ def public_digital_menu(
         or not link.is_active
         or business.status not in {BusinessStatus.active, BusinessStatus.demo}
     ):
+        return PlainTextResponse(
+            "Este menú no se encuentra disponible actualmente.", status_code=403
+        )
+    if not business_has_feature(business, BusinessFeatureKey.digital_menu):
         return PlainTextResponse(
             "Este menú no se encuentra disponible actualmente.", status_code=403
         )
@@ -1075,6 +1109,11 @@ def admin_create_business(
     _enforce_legal_acceptance(db, user)
     require_platform_admin(user)
     business = Business(**_validated_business_patch(payload.model_dump()))
+    if (
+        business.destination_type == DestinationType.digital_menu
+        and not plan_includes_feature(business.plan_key, BusinessFeatureKey.digital_menu)
+    ):
+        raise HTTPException(status_code=403, detail="Feature not enabled: digital_menu")
     db.add(business)
     try:
         db.flush()
@@ -1101,8 +1140,15 @@ def admin_patch_business(
     if business is None:
         raise HTTPException(status_code=404, detail="Business not found")
     data = _validated_business_patch(payload.model_dump(exclude_unset=True))
+    next_plan_key = data.get("plan_key", business.plan_key)
+    if (
+        data.get("destination_type") == DestinationType.digital_menu
+        and not plan_includes_feature(next_plan_key, BusinessFeatureKey.digital_menu)
+    ):
+        raise HTTPException(status_code=403, detail="Feature not enabled: digital_menu")
     for key, value in data.items():
         setattr(business, key, value)
+    _apply_plan_destination_fallback(db, business, payload)
     sync_current_destination(db, business)
     business.updated_at = datetime.now(UTC)
     record_audit_event(
@@ -1279,6 +1325,30 @@ def _dynamic_public_cache_headers() -> dict[str, str]:
         "Pragma": "no-cache",
         "Expires": "0",
     }
+
+
+def _apply_plan_destination_fallback(
+    db: Session, business: Business, payload: BusinessPatch
+) -> None:
+    if payload.plan_key is None:
+        return
+    if business.destination_type != DestinationType.digital_menu:
+        return
+    if business_has_feature(business, BusinessFeatureKey.digital_menu):
+        return
+    if _business_has_valid_external_url(business):
+        business.destination_type = DestinationType.external_url
+        return
+    active_menu = get_active_menu(db, business.id)
+    if active_menu is not None:
+        business.destination_type = DestinationType.menu_pdf
+
+
+def _business_has_valid_external_url(business: Business) -> bool:
+    if not business.external_url:
+        return False
+    parsed = urlparse(business.external_url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _validated_business_patch(data: dict[str, object]) -> dict[str, object]:

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 
 from app.models import (
     AcceptanceMethod,
+    BusinessPlanKey,
     BusinessStatus,
     DestinationType,
     DigitalMenuStatus,
@@ -62,6 +63,7 @@ class BusinessCreate(BaseModel):
     name: str
     slug: str
     logo_url: str | None = None
+    plan_key: BusinessPlanKey = BusinessPlanKey.essential
     destination_type: DestinationType = DestinationType.menu_pdf
     external_url: str | None = None
     status: BusinessStatus = BusinessStatus.demo
@@ -70,9 +72,18 @@ class BusinessCreate(BaseModel):
 class BusinessPatch(BaseModel):
     name: str | None = None
     logo_url: str | None = None
+    plan_key: BusinessPlanKey | None = None
     destination_type: DestinationType | None = None
     external_url: str | None = None
     status: BusinessStatus | None = None
+
+
+class BusinessFeaturesOut(BaseModel):
+    digital_menu: bool = False
+    artistic_qr: bool = False
+    advanced_analytics: bool = False
+    scheduled_promotions: bool = False
+    advanced_branding: bool = False
 
 
 class BusinessOut(BaseModel):
@@ -80,6 +91,8 @@ class BusinessOut(BaseModel):
     name: str
     slug: str
     logo_url: str | None
+    plan_key: BusinessPlanKey
+    features: BusinessFeaturesOut
     destination_type: DestinationType
     external_url: str | None
     status: BusinessStatus

@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     async (
       token: string | null | undefined,
       businessId: string,
-      payload: {destination_type: "menu_pdf" | "external_url"; external_url?: string | null},
+      payload: {destination_type: "menu_pdf" | "external_url" | "digital_menu"; external_url?: string | null},
       isPlatformAdmin = false,
     ) =>
       mocks.request(`${isPlatformAdmin ? "/admin" : "/api"}/businesses/${businessId}`, token, {
@@ -61,6 +61,8 @@ describe("AdminPanel", () => {
         logo_url: null,
         name: "Bar Central",
         slug: "bar-central",
+        plan_key: "essential",
+        features: {digital_menu: false},
         status: "active",
         destination_type: "menu_pdf",
         external_url: null,
@@ -70,6 +72,8 @@ describe("AdminPanel", () => {
         logo_url: null,
         name: "Cafe Norte",
         slug: "cafe-norte",
+        plan_key: "premium",
+        features: {digital_menu: true},
         status: "demo",
         destination_type: "external_url",
         external_url: "https://cafe.example/menu",
@@ -79,6 +83,8 @@ describe("AdminPanel", () => {
         logo_url: null,
         name: "Hamburgueseria X",
         slug: "hamburgueseria-x",
+        plan_key: "essential",
+        features: {digital_menu: false},
         status: "suspended",
         destination_type: "menu_pdf",
         external_url: null,
@@ -89,6 +95,8 @@ describe("AdminPanel", () => {
       logo_url: null,
       name: "Pizzeria Sur",
       slug: "pizzeria-sur",
+      plan_key: "essential",
+      features: {digital_menu: false},
       status: "active",
       destination_type: "menu_pdf",
       external_url: null,
@@ -104,9 +112,17 @@ describe("AdminPanel", () => {
     });
     mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
       if (path === "/admin/businesses/biz-2" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body ?? "{}")) as Record<string, string>;
+        if (body.plan_key) {
+          return {...businesses[1], plan_key: body.plan_key, features: {digital_menu: body.plan_key === "premium"}};
+        }
         return {...businesses[1], status: "active"};
       }
       if (path === "/admin/businesses/biz-1" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body ?? "{}")) as Record<string, string>;
+        if (body.plan_key) {
+          return {...businesses[0], plan_key: body.plan_key, features: {digital_menu: body.plan_key === "premium"}};
+        }
         return {
           ...businesses[0],
           destination_type: "external_url",
@@ -169,7 +185,24 @@ describe("AdminPanel", () => {
         "admin-token",
         expect.objectContaining({method: "PATCH"}),
       );
-      expect(within(activeRow).getByText("Destino: Carta externa")).toBeTruthy();
+      expect(within(activeRow).getByText("Destino: Carta digital propia")).toBeTruthy();
+    });
+
+    fireEvent.change(within(activeRow).getByLabelText("Plan de Bar Central"), {
+      target: {value: "premium"},
+    });
+    fireEvent.click(within(activeRow).getByRole("button", {name: "Guardar plan"}));
+
+    await waitFor(() => {
+      expect(mocks.request).toHaveBeenCalledWith(
+        "/admin/businesses/biz-1",
+        "admin-token",
+        expect.objectContaining({
+          body: JSON.stringify({plan_key: "premium"}),
+          method: "PATCH",
+        }),
+      );
+      expect(within(activeRow).getByText("Plan: Premium")).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Nombre del negocio"), {

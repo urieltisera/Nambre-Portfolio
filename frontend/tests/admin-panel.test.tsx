@@ -11,6 +11,19 @@ const mocks = vi.hoisted(() => ({
   inviteClient: vi.fn(),
   listBusinesses: vi.fn(),
   request: vi.fn(),
+  updateBusinessDestination: vi.fn(
+    async (
+      token: string | null | undefined,
+      businessId: string,
+      payload: {destination_type: "menu_pdf" | "external_url"; external_url?: string | null},
+      isPlatformAdmin = false,
+    ) =>
+      mocks.request(`${isPlatformAdmin ? "/admin" : "/api"}/businesses/${businessId}`, token, {
+        body: JSON.stringify(payload),
+        headers: {"Content-Type": "application/json"},
+        method: "PATCH",
+      }),
+  ),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -20,6 +33,7 @@ vi.mock("@/lib/api", async () => {
     inviteClient: mocks.inviteClient,
     listBusinesses: mocks.listBusinesses,
     request: mocks.request,
+    updateBusinessDestination: mocks.updateBusinessDestination,
   };
 });
 
@@ -28,6 +42,7 @@ afterEach(() => {
   mocks.inviteClient.mockReset();
   mocks.listBusinesses.mockReset();
   mocks.request.mockReset();
+  mocks.updateBusinessDestination.mockClear();
 });
 
 function rowFor(text: string): HTMLElement {
@@ -41,9 +56,33 @@ function rowFor(text: string): HTMLElement {
 describe("AdminPanel", () => {
   it("renders all businesses, exposes valid actions, updates status and sends invitations", async () => {
     const businesses: Business[] = [
-      {id: "biz-1", logo_url: null, name: "Bar Central", slug: "bar-central", status: "active"},
-      {id: "biz-2", logo_url: null, name: "Cafe Norte", slug: "cafe-norte", status: "demo"},
-      {id: "biz-3", logo_url: null, name: "Hamburgueseria X", slug: "hamburgueseria-x", status: "suspended"},
+      {
+        id: "biz-1",
+        logo_url: null,
+        name: "Bar Central",
+        slug: "bar-central",
+        status: "active",
+        destination_type: "menu_pdf",
+        external_url: null,
+      },
+      {
+        id: "biz-2",
+        logo_url: null,
+        name: "Cafe Norte",
+        slug: "cafe-norte",
+        status: "demo",
+        destination_type: "external_url",
+        external_url: "https://cafe.example/menu",
+      },
+      {
+        id: "biz-3",
+        logo_url: null,
+        name: "Hamburgueseria X",
+        slug: "hamburgueseria-x",
+        status: "suspended",
+        destination_type: "menu_pdf",
+        external_url: null,
+      },
     ];
     const created: Business = {
       id: "biz-4",
@@ -51,6 +90,8 @@ describe("AdminPanel", () => {
       name: "Pizzeria Sur",
       slug: "pizzeria-sur",
       status: "active",
+      destination_type: "menu_pdf",
+      external_url: null,
     };
 
     mocks.listBusinesses
@@ -64,6 +105,13 @@ describe("AdminPanel", () => {
     mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
       if (path === "/admin/businesses/biz-2" && init?.method === "PATCH") {
         return {...businesses[1], status: "active"};
+      }
+      if (path === "/admin/businesses/biz-1" && init?.method === "PATCH") {
+        return {
+          ...businesses[0],
+          destination_type: "external_url",
+          external_url: "https://bar.example/menu",
+        };
       }
       throw new Error(`Unhandled request: ${path}`);
     });
@@ -105,6 +153,23 @@ describe("AdminPanel", () => {
     await waitFor(() => {
       expect(within(demoRow).getByText("Activo")).toBeTruthy();
       expect(within(demoRow).queryByRole("button", {name: "Activar"})).toBeNull();
+    });
+
+    fireEvent.change(within(activeRow).getByDisplayValue("Carta en Nambre"), {
+      target: {value: "external_url"},
+    });
+    fireEvent.change(within(activeRow).getByPlaceholderText("https://tu-carta.com/menu"), {
+      target: {value: "https://bar.example/menu"},
+    });
+    fireEvent.click(within(activeRow).getByRole("button", {name: "Guardar destino"}));
+
+    await waitFor(() => {
+      expect(mocks.request).toHaveBeenCalledWith(
+        "/admin/businesses/biz-1",
+        "admin-token",
+        expect.objectContaining({method: "PATCH"}),
+      );
+      expect(within(activeRow).getByText("Destino: Carta externa")).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Nombre del negocio"), {

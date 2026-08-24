@@ -33,6 +33,21 @@ def get_or_create_dynamic_link(db: Session, business_id: str, menu_asset_id: str
         link.destination_type = DestinationType.menu_pdf
         link.destination_id = menu_asset_id
         return link
+    return ensure_dynamic_link(db, business_id, menu_asset_id=menu_asset_id)
+
+
+def ensure_dynamic_link(
+    db: Session,
+    business_id: str,
+    *,
+    menu_asset_id: str | None = None,
+) -> DynamicLink:
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business_id))
+    if link is not None:
+        if menu_asset_id is not None:
+            link.destination_id = menu_asset_id
+            link.destination_type = DestinationType.menu_pdf
+        return link
     while True:
         code = token_urlsafe(12)
         exists = db.scalar(select(DynamicLink).where(DynamicLink.public_code == code))
@@ -41,7 +56,7 @@ def get_or_create_dynamic_link(db: Session, business_id: str, menu_asset_id: str
                 business_id=business_id,
                 public_code=code,
                 destination_type=DestinationType.menu_pdf,
-                destination_id=menu_asset_id,
+                destination_id=menu_asset_id or "",
                 is_active=True,
             )
             db.add(link)

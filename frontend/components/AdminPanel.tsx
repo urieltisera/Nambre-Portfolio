@@ -9,12 +9,15 @@ import {Card} from "@/components/ui/Card";
 import {PageHeader} from "@/components/ui/PageHeader";
 import {
   adminBusinessActions,
+  businessDestinationErrorMessage,
+  businessDestinationLabel,
   businessStatusLabel,
   Business,
   inviteClient,
   inviteClientErrorMessage,
   listBusinesses,
   request,
+  updateBusinessDestination,
 } from "@/lib/api";
 
 export function AdminPanel({
@@ -30,6 +33,9 @@ export function AdminPanel({
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [destinationDrafts, setDestinationDrafts] = useState<
+    Record<string, {destination_type: "menu_pdf" | "external_url"; external_url: string}>
+  >({});
   const [error, setError] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
 
@@ -37,7 +43,19 @@ export function AdminPanel({
     setLoading(true);
     setError("");
     try {
-      setBusinesses(await listBusinesses(token, true));
+      const items = await listBusinesses(token, true);
+      setBusinesses(items);
+      setDestinationDrafts(
+        Object.fromEntries(
+          items.map((item) => [
+            item.id,
+            {
+              destination_type: item.destination_type === "external_url" ? "external_url" : "menu_pdf",
+              external_url: item.external_url ?? "",
+            },
+          ]),
+        ),
+      );
     } catch {
       setError("No se pudieron cargar los negocios.");
     } finally {
@@ -85,6 +103,38 @@ export function AdminPanel({
     }
   }
 
+  async function updateDestination(businessId: string) {
+    const draft = destinationDrafts[businessId];
+    if (!draft) return;
+    setSavingId(businessId);
+    setError("");
+    try {
+      const updated = await updateBusinessDestination(
+        token,
+        businessId,
+        {
+          destination_type: draft.destination_type,
+          external_url: draft.destination_type === "external_url" ? draft.external_url : undefined,
+        },
+        true,
+      );
+      setBusinesses((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setDestinationDrafts((current) => ({
+        ...current,
+        [businessId]: {
+          destination_type: updated.destination_type === "external_url" ? "external_url" : "menu_pdf",
+          external_url: updated.external_url ?? "",
+        },
+      }));
+    } catch (destinationError: unknown) {
+      setError(businessDestinationErrorMessage(destinationError));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   return (
     <section className="admin-shell">
       <div className="admin-shell__header">
@@ -114,8 +164,12 @@ export function AdminPanel({
                 <div>
                   <strong>{item.name}</strong>
                   <p className="muted">{businessStatusLabel(item.status)}</p>
+                  <p className="muted">
+                    Destino: {businessDestinationLabel(item.destination_type ?? "menu_pdf")}
+                  </p>
+                  {item.external_url ? <p className="muted">{item.external_url}</p> : null}
                 </div>
-                <div className="actions">
+                <div className="actions" style={{alignItems: "stretch", display: "grid", gap: "0.75rem"}}>
                   {adminBusinessActions(item.status).map((action) => (
                     <button
                       className={action.nextStatus === "suspended" ? "secondary" : ""}
@@ -126,6 +180,54 @@ export function AdminPanel({
                       {savingId === item.id ? "Guardando..." : action.label}
                     </button>
                   ))}
+                  <select
+                    className="ui-input"
+                    disabled={savingId === item.id}
+                    value={destinationDrafts[item.id]?.destination_type ?? "menu_pdf"}
+                    onChange={(event) =>
+                      setDestinationDrafts((current) => ({
+                        ...current,
+                        [item.id]: {
+                          destination_type: event.target.value as "menu_pdf" | "external_url",
+                          external_url: current[item.id]?.external_url ?? item.external_url ?? "",
+                        },
+                      }))
+                    }
+                  >
+                    <option value="menu_pdf">Carta en Nambre</option>
+                    <option value="external_url">Carta externa</option>
+                  </select>
+                  {(destinationDrafts[item.id]?.destination_type ?? "menu_pdf") === "external_url" ? (
+                    <input
+                      className="ui-input"
+                      disabled={savingId === item.id}
+                      placeholder="https://tu-carta.com/menu"
+                      type="url"
+                      value={destinationDrafts[item.id]?.external_url ?? ""}
+                      onChange={(event) =>
+                        setDestinationDrafts((current) => ({
+                          ...current,
+                          [item.id]: {
+                            destination_type: current[item.id]?.destination_type ?? "external_url",
+                            external_url: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  ) : null}
+                  <Button
+                    disabled={
+                      savingId === item.id ||
+                      (
+                        (destinationDrafts[item.id]?.destination_type ?? "menu_pdf") === "external_url" &&
+                        !(destinationDrafts[item.id]?.external_url ?? "").trim()
+                      )
+                    }
+                    onClick={() => void updateDestination(item.id)}
+                    variant="secondary"
+                  >
+                    {savingId === item.id ? "Guardando..." : "Guardar destino"}
+                  </Button>
                 </div>
               </div>
             ))}

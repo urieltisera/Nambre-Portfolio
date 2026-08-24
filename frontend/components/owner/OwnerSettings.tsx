@@ -190,7 +190,7 @@ export function OwnerSettings({
           <div className="settings-section__header">
             <div>
               <h2>Seguridad</h2>
-              <p>Cambiá tu contraseña y mantené la sesión alineada con el backend real.</p>
+              <p>Administrá tu contraseña y el acceso a tu cuenta.</p>
             </div>
           </div>
           <form className="settings-password" onSubmit={submitPasswordChange}>
@@ -235,25 +235,12 @@ export function OwnerSettings({
             >
               {changingPassword ? "Guardando..." : "Guardar nueva contraseña"}
             </Button>
+            <div className="settings-session">
+              <Button onClick={() => void onLogout()} variant="danger">
+                <LogOut size={16} /> Cerrar sesión
+              </Button>
+            </div>
           </form>
-        </Card>
-
-        <Card className="settings-section">
-          <div className="settings-section__header">
-            <div>
-              <h2>Sesión</h2>
-              <p>Tu sesión actual sigue validándose contra el backend real.</p>
-            </div>
-          </div>
-          <div className="settings-session">
-            <div>
-              <strong>{user.email}</strong>
-              <p>{userRoleLabel(user)}</p>
-            </div>
-            <Button onClick={() => void onLogout()} variant="danger">
-              <LogOut size={16} /> Cerrar sesión
-            </Button>
-          </div>
         </Card>
       </div>
     </section>

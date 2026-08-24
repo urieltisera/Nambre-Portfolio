@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from app.models import (
     AcceptanceMethod,
     BusinessStatus,
+    DestinationType,
     LegalDocumentType,
     MembershipRole,
     MenuAssetStatus,
@@ -59,12 +60,16 @@ class BusinessCreate(BaseModel):
     name: str
     slug: str
     logo_url: str | None = None
+    destination_type: DestinationType = DestinationType.menu_pdf
+    external_url: str | None = None
     status: BusinessStatus = BusinessStatus.demo
 
 
 class BusinessPatch(BaseModel):
     name: str | None = None
     logo_url: str | None = None
+    destination_type: DestinationType | None = None
+    external_url: str | None = None
     status: BusinessStatus | None = None
 
 
@@ -73,6 +78,8 @@ class BusinessOut(BaseModel):
     name: str
     slug: str
     logo_url: str | None
+    destination_type: DestinationType
+    external_url: str | None
     status: BusinessStatus
     created_at: datetime
     updated_at: datetime

@@ -277,5 +277,9 @@ describe("Password flows", () => {
     expect(
       screen.getByText("La contraseña fue actualizada y esta sesión ya usa la credencial nueva."),
     ).toBeTruthy();
+    expect(screen.getByText("Administrá tu contraseña y el acceso a tu cuenta.")).toBeTruthy();
+    expect(screen.queryByText(/backend real/i)).toBeNull();
+    expect(screen.queryByRole("heading", {name: "Sesión"})).toBeNull();
+    expect(screen.getByRole("button", {name: "Cerrar sesión"})).toBeTruthy();
   });
 });

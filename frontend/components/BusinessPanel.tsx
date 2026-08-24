@@ -28,8 +28,11 @@ import {PageHeader} from "@/components/ui/PageHeader";
 import {AnalyticsWindow, sliceDailySeries, toActivityPoints} from "@/lib/analytics";
 import {
   assetUrl,
+  businessDestinationErrorMessage,
+  businessDestinationLabel,
   canOperateBusiness,
   businessStatusLabel,
+  BusinessDestination,
   formatPeakHour,
   listBusinesses,
   Business,
@@ -41,6 +44,7 @@ import {
   qrPreviewErrorMessage,
   request,
   Summary,
+  updateBusinessDestination,
   uploadErrorMessage,
   User,
 } from "@/lib/api";
@@ -85,9 +89,13 @@ export function BusinessPanel({
   const [selectedLogo, setSelectedLogo] = useState<File | null>(null);
   const [uploadingMenu, setUploadingMenu] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [savingDestination, setSavingDestination] = useState(false);
   const [generatingQr, setGeneratingQr] = useState(false);
   const [menuMessage, setMenuMessage] = useState("");
   const [logoMessage, setLogoMessage] = useState("");
+  const [destinationMessage, setDestinationMessage] = useState("");
+  const [destinationTypeDraft, setDestinationTypeDraft] = useState<BusinessDestination>("menu_pdf");
+  const [externalUrlDraft, setExternalUrlDraft] = useState("");
   const [qrDownloadError, setQrDownloadError] = useState("");
   const [qrPreviewVersion, setQrPreviewVersion] = useState(0);
   const loadBusinessesRequestRef = useRef<Promise<void> | null>(null);
@@ -184,6 +192,14 @@ export function BusinessPanel({
     if (!businessId) return;
     void refresh();
   }, [businessId, refresh]);
+
+  useEffect(() => {
+    setDestinationTypeDraft(
+      business?.destination_type === "external_url" ? "external_url" : "menu_pdf",
+    );
+    setExternalUrlDraft(business?.external_url ?? "");
+    setDestinationMessage("");
+  }, [business?.destination_type, business?.external_url, business?.id]);
 
   useEffect(() => {
     function syncFreshState() {
@@ -283,6 +299,31 @@ export function BusinessPanel({
       await refresh();
     } finally {
       setGeneratingQr(false);
+    }
+  }
+
+  async function saveDestination() {
+    if (!businessId) return;
+    setSavingDestination(true);
+    setDestinationMessage("");
+    try {
+      const updated = await updateBusinessDestination(
+        token,
+        businessId,
+        {
+          destination_type: destinationTypeDraft,
+          external_url: destinationTypeDraft === "external_url" ? externalUrlDraft : undefined,
+        },
+        isPlatformAdmin,
+      );
+      setBusiness(updated);
+      setBusinesses((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setDestinationMessage("Destino guardado correctamente.");
+      await refresh({force: true});
+    } catch (error: unknown) {
+      setDestinationMessage(businessDestinationErrorMessage(error));
+    } finally {
+      setSavingDestination(false);
     }
   }
 
@@ -466,18 +507,6 @@ export function BusinessPanel({
                   <BarChart3 size={16} /> Estadísticas
                 </Button>
               </div>
-            </Card>
-            <Card className="panel-stack owner-compact-card">
-              <h2>Actividad en 7 días</h2>
-              <ActivityChart
-                contained={false}
-                description="Resumen corto de uso reciente."
-                emptyDescription="Todavía no hay actividad suficiente para mostrar."
-                emptyTitle="Sin actividad reciente"
-                points={recentActivityPoints}
-                title="Actividad en 7 días"
-                variant="compact"
-              />
             </Card>
           </section>
         ) : (
@@ -861,10 +890,80 @@ export function BusinessPanel({
                   <dt>Estado</dt>
                   <dd>{businessStatusLabel(business.status)}</dd>
                 </div>
+                <div>
+                  <dt>Destino actual</dt>
+                  <dd>{businessDestinationLabel(business.destination_type ?? "menu_pdf")}</dd>
+                </div>
               </div>
             </Card>
             <Card className="panel-stack">
-              <h2>Logo actual</h2>
+              <h2>¿Dónde está tu carta?</h2>
+              <p className="muted">
+                Podés seguir usando la carta que ya tenés. Tu QR de Nambre seguirá siendo el mismo
+                aunque cambies este enlace más adelante.
+              </p>
+              <label className="login-legal__checkbox">
+                <input
+                  checked={destinationTypeDraft === "menu_pdf"}
+                  disabled={!canMutate || savingDestination}
+                  name="business-destination"
+                  onChange={() => setDestinationTypeDraft("menu_pdf")}
+                  type="radio"
+                />
+                <span>Usar mi carta en Nambre</span>
+              </label>
+              <label className="login-legal__checkbox">
+                <input
+                  checked={destinationTypeDraft === "external_url"}
+                  disabled={!canMutate || savingDestination}
+                  name="business-destination"
+                  onChange={() => setDestinationTypeDraft("external_url")}
+                  type="radio"
+                />
+                <span>Usar una carta que ya tengo</span>
+              </label>
+              {destinationTypeDraft === "external_url" ? (
+                <label className="field">
+                  <span className="field__label">URL de tu carta</span>
+                  <input
+                    className="ui-input"
+                    disabled={!canMutate || savingDestination}
+                    onChange={(event) => setExternalUrlDraft(event.target.value)}
+                    placeholder="https://tu-carta.com/menu"
+                    type="url"
+                    value={externalUrlDraft}
+                  />
+                </label>
+              ) : null}
+              <p className="muted">
+                Destino actual: {businessDestinationLabel(business.destination_type ?? "menu_pdf")}
+              </p>
+              <div className="actions">
+                <Button
+                  disabled={
+                    !canMutate ||
+                    savingDestination ||
+                    (destinationTypeDraft === "external_url" && !externalUrlDraft.trim())
+                  }
+                  onClick={() => void saveDestination()}
+                >
+                  {savingDestination ? "Guardando..." : "Guardar"}
+                </Button>
+                <Button
+                  disabled={
+                    (business.destination_type ?? "menu_pdf") !== "external_url" || !business.external_url
+                  }
+                  onClick={() => window.open(business.external_url ?? "", "_blank", "noopener,noreferrer")}
+                  variant="secondary"
+                >
+                  Abrir/probar enlace actual
+                </Button>
+              </div>
+              {destinationMessage ? (
+                <Alert tone={destinationMessage.includes("correctamente") ? "success" : "danger"}>
+                  {destinationMessage}
+                </Alert>
+              ) : null}
               {business.logo_url ? (
                 <div className="asset-preview">
                   <img

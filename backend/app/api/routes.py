@@ -2,7 +2,7 @@ from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from os import PathLike
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from fastapi import (
     APIRouter,
@@ -109,7 +109,12 @@ from app.services.legal_service import (
     latest_legal_acceptances,
     pending_legal_documents,
 )
-from app.services.menu_service import get_active_menu, rollback_menu, upload_menu_pdf
+from app.services.menu_service import (
+    ensure_dynamic_link,
+    get_active_menu,
+    rollback_menu,
+    upload_menu_pdf,
+)
 from app.services.qr_service import generate_qr_assets
 from app.services.user_admin_service import AdminCreationError, normalize_email
 from app.storage.local import LocalStorage
@@ -427,6 +432,9 @@ def patch_business(
         data.pop("status", None)
         if data:
             business = require_operable_business(db, user, business_id)
+    data = _validated_business_patch(data)
+    if data.get("destination_type") == DestinationType.external_url:
+        ensure_dynamic_link(db, business_id)
     for key, value in data.items():
         setattr(business, key, value)
     business.updated_at = datetime.now(UTC)
@@ -608,9 +616,24 @@ def public_redirect(
         return PlainTextResponse(
             "Este menú no se encuentra disponible actualmente.", status_code=403
         )
-    if link.destination_type != DestinationType.menu_pdf:
-        raise HTTPException(status_code=404, detail="Not found")
     record_scan(db, link.id, link.business_id, user_agent)
+    if business.destination_type == DestinationType.external_url:
+        if not business.external_url:
+            db.commit()
+            raise HTTPException(status_code=404, detail="Not found")
+        parsed = urlparse(business.external_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            db.commit()
+            raise HTTPException(status_code=404, detail="Not found")
+        db.commit()
+        return RedirectResponse(
+            url=business.external_url,
+            status_code=302,
+            headers=_dynamic_public_cache_headers(),
+        )
+    if link.destination_id == "":
+        db.commit()
+        raise HTTPException(status_code=404, detail="Not found")
     db.commit()
     return RedirectResponse(
         url=_public_menu_url(public_code),
@@ -669,9 +692,12 @@ def admin_create_business(
 ) -> Business:
     _enforce_legal_acceptance(db, user)
     require_platform_admin(user)
-    business = Business(**payload.model_dump())
+    business = Business(**_validated_business_patch(payload.model_dump()))
     db.add(business)
     try:
+        db.flush()
+        if business.destination_type == DestinationType.external_url:
+            ensure_dynamic_link(db, business.id)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -693,7 +719,10 @@ def admin_patch_business(
     business = db.get(Business, business_id)
     if business is None:
         raise HTTPException(status_code=404, detail="Business not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = _validated_business_patch(payload.model_dump(exclude_unset=True))
+    if data.get("destination_type") == DestinationType.external_url:
+        ensure_dynamic_link(db, business_id)
+    for key, value in data.items():
         setattr(business, key, value)
     business.updated_at = datetime.now(UTC)
     record_audit_event(
@@ -703,7 +732,7 @@ def admin_patch_business(
         business_id=business.id,
         target_type="business",
         target_id=business.id,
-        details=payload.model_dump(exclude_unset=True),
+        details=data,
     )
     db.commit()
     return business
@@ -870,6 +899,27 @@ def _dynamic_public_cache_headers() -> dict[str, str]:
         "Pragma": "no-cache",
         "Expires": "0",
     }
+
+
+def _validated_business_patch(data: dict[str, object]) -> dict[str, object]:
+    validated = dict(data)
+    if "external_url" in validated and isinstance(validated["external_url"], str):
+        validated["external_url"] = validated["external_url"].strip()
+    destination_type = validated.get("destination_type")
+    external_url = validated.get("external_url")
+    if destination_type == DestinationType.external_url:
+        if not isinstance(external_url, str) or not external_url:
+            raise HTTPException(status_code=400, detail="External URL is required")
+        parsed = urlparse(external_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="External URL is invalid")
+    if (
+        "external_url" in validated
+        and isinstance(validated["external_url"], str)
+        and validated["external_url"] == ""
+    ):
+        raise HTTPException(status_code=400, detail="External URL is invalid")
+    return validated
 
 
 def _public_menu_url(public_code: str) -> str:

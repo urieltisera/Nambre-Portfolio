@@ -169,6 +169,13 @@ def test_membership_isolation(client, db: Session) -> None:
     )
 
 
+def test_business_defaults_to_hosted_menu_destination(db: Session) -> None:
+    business = make_business(db, "Hosted Biz", "hosted-biz")
+
+    assert business.destination_type == DestinationType.menu_pdf
+    assert business.external_url is None
+
+
 def test_create_platform_admin_real_user_and_login(client, db: Session) -> None:
     result = create_platform_admin(db, "Real.Admin@example.com", "real-admin-123")
     assert result == CreatePlatformAdminResult.created
@@ -420,6 +427,149 @@ def test_dynamic_link_redirect_suspension_and_stable_code(client, db: Session) -
     assert client.get(f"/m/{code}/menu.pdf").status_code == 403
     assert client.get("/r/not-real").status_code == 404
     assert client.get("/m/not-real/menu.pdf").status_code == 404
+
+
+def test_owner_can_switch_business_to_external_url_and_qr_redirects_without_changing_code(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "owner-external@example.com")
+    business = make_business(db, "External Biz", "external-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    patch = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={
+            "destination_type": "external_url",
+            "external_url": "https://carta.ejemplo.com/menu",
+        },
+    )
+    assert patch.status_code == 200
+    assert patch.json()["destination_type"] == "external_url"
+    assert patch.json()["external_url"] == "https://carta.ejemplo.com/menu"
+
+    generated = client.post(
+        f"/api/businesses/{business.id}/qr/generate",
+        headers=auth_headers(owner),
+    )
+    assert generated.status_code == 200
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    original_public_code = link.public_code
+
+    redirect = client.get(f"/r/{original_public_code}", headers={"User-Agent": "Mobile Safari"})
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == "https://carta.ejemplo.com/menu"
+    assert_dynamic_menu_cache_headers(redirect)
+    assert db.scalar(select(ScanEvent).where(ScanEvent.business_id == business.id)) is not None
+
+    back_to_hosted = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={"destination_type": "menu_pdf"},
+    )
+    assert back_to_hosted.status_code == 200
+    db.refresh(link)
+    assert link.public_code == original_public_code
+
+
+def test_invalid_external_url_schemes_are_rejected(client, db: Session) -> None:
+    owner = make_user(db, "owner-invalid-url@example.com")
+    business = make_business(db, "Invalid URL Biz", "invalid-url-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    for url in ("javascript:alert(1)", "data:text/html,boom", "file:///tmp/menu.pdf", "notaurl"):
+        response = client.patch(
+            f"/api/businesses/{business.id}",
+            headers=auth_headers(owner),
+            json={"destination_type": "external_url", "external_url": url},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "External URL is invalid"
+
+
+def test_hosted_and_external_switches_preserve_menu_versions_and_qr_url(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "owner-preserve@example.com")
+    business = make_business(db, "Preserve Biz", "preserve-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    first = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu-v1.pdf")],
+    )
+    assert first.status_code == 200
+    second = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V2, "menu-v2.pdf")],
+    )
+    assert second.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    original_public_code = link.public_code
+    original_destination_id = link.destination_id
+
+    switch_external = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={
+            "destination_type": "external_url",
+            "external_url": "https://carta.ejemplo.com/preserve",
+        },
+    )
+    assert switch_external.status_code == 200
+
+    menu_versions_while_external = db.scalars(
+        select(MenuAsset).where(MenuAsset.business_id == business.id).order_by(MenuAsset.version)
+    ).all()
+    assert [asset.version for asset in menu_versions_while_external] == [1, 2]
+    assert len(menu_versions_while_external) == 2
+
+    switch_hosted = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={"destination_type": "menu_pdf"},
+    )
+    assert switch_hosted.status_code == 200
+    db.refresh(link)
+    assert link.public_code == original_public_code
+    assert link.destination_id == original_destination_id
+
+
+def test_platform_admin_can_modify_external_destination_and_staff_cannot(
+    client, db: Session
+) -> None:
+    admin = make_user(db, "admin-destination@example.com", admin=True)
+    owner = make_user(db, "owner-destination@example.com")
+    staff = make_user(db, "staff-destination@example.com")
+    business = make_business(db, "Destination Biz", "destination-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+    add_membership(db, staff, business, MembershipRole.staff)
+
+    admin_patch = client.patch(
+        f"/admin/businesses/{business.id}",
+        headers=auth_headers(admin),
+        json={
+            "destination_type": "external_url",
+            "external_url": "http://legacy-menu.ejemplo.com",
+        },
+    )
+    assert admin_patch.status_code == 200
+    assert admin_patch.json()["external_url"] == "http://legacy-menu.ejemplo.com"
+
+    staff_patch = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(staff),
+        json={
+            "destination_type": "external_url",
+            "external_url": "https://otro.ejemplo.com/menu",
+        },
+    )
+    assert staff_patch.status_code == 403
 
 
 def test_qr_payload_and_analytics_tenant_isolation(client, db: Session) -> None:

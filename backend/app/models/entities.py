@@ -84,6 +84,10 @@ class Business(Base):
     name: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    destination_type: Mapped[DestinationType] = mapped_column(
+        Enum(DestinationType), default=DestinationType.menu_pdf
+    )
+    external_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     status: Mapped[BusinessStatus] = mapped_column(
         Enum(BusinessStatus), default=BusinessStatus.demo
     )

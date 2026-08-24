@@ -3,10 +3,14 @@ export type Business = {
   name: string;
   slug: string;
   logo_url: string | null;
+  destination_type?: "menu_pdf" | "external_url" | "digital_menu" | "promo" | "landing_page";
+  external_url?: string | null;
   status: "demo" | "active" | "suspended";
   created_at?: string;
   updated_at?: string;
 };
+
+export type BusinessDestination = "menu_pdf" | "external_url";
 
 export type MenuAsset = {
   id: string;
@@ -336,6 +340,23 @@ export async function inviteClient(
   });
 }
 
+export async function updateBusinessDestination(
+  token: string | null | undefined,
+  businessId: string,
+  payload: {destination_type: BusinessDestination; external_url?: string | null},
+  isPlatformAdmin = false,
+): Promise<Business> {
+  return request<Business>(
+    `${isPlatformAdmin ? "/admin" : "/api"}/businesses/${businessId}`,
+    token,
+    {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export function formatPeakHour(hour: number | null): string {
   if (hour === null) return "—";
   return `${hour.toString().padStart(2, "0")}:00`;
@@ -447,6 +468,29 @@ export function inviteClientErrorMessage(error: unknown): string {
     return error.detail;
   }
   return "No se pudo enviar la invitación.";
+}
+
+export function businessDestinationLabel(destinationType: Business["destination_type"]): string {
+  return destinationType === "external_url" ? "Carta externa" : "Carta en Nambre";
+}
+
+export function businessDestinationErrorMessage(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "No se pudo conectar con el servidor para guardar el destino de la carta.";
+  }
+  if (error instanceof ApiError) {
+    if (error.detail === "External URL is required") {
+      return "Ingresá la URL de tu carta para usar un enlace externo.";
+    }
+    if (error.detail === "External URL is invalid") {
+      return "La URL de la carta debe empezar con http:// o https:// y ser válida.";
+    }
+    if (error.detail === "Business is suspended") {
+      return "Este negocio está suspendido. Reactivalo desde Admin para volver a operar.";
+    }
+    return error.detail;
+  }
+  return "No se pudo guardar el destino de la carta.";
 }
 
 export function qrPreviewErrorMessage(error: unknown): string {

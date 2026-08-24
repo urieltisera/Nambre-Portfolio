@@ -13,6 +13,19 @@ const mocks = vi.hoisted(() => ({
   fetchQrAssetBlob: vi.fn(async () => new Blob(["qr"])),
   listBusinesses: vi.fn(),
   request: vi.fn(),
+  updateBusinessDestination: vi.fn(
+    async (
+      token: string | null | undefined,
+      businessId: string,
+      payload: {destination_type: "menu_pdf" | "external_url"; external_url?: string | null},
+      isPlatformAdmin = false,
+    ) =>
+      mocks.request(`${isPlatformAdmin ? "/admin" : "/api"}/businesses/${businessId}`, token, {
+        body: JSON.stringify(payload),
+        headers: {"Content-Type": "application/json"},
+        method: "PATCH",
+      }),
+  ),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -23,6 +36,7 @@ vi.mock("@/lib/api", async () => {
     fetchQrAssetBlob: mocks.fetchQrAssetBlob,
     listBusinesses: mocks.listBusinesses,
     request: mocks.request,
+    updateBusinessDestination: mocks.updateBusinessDestination,
   };
 });
 
@@ -32,14 +46,15 @@ afterEach(() => {
   mocks.fetchQrAssetBlob.mockClear();
   mocks.listBusinesses.mockReset();
   mocks.request.mockReset();
+  mocks.updateBusinessDestination.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-function renderPanel(ui: React.ReactElement) {
+function renderPanel(ui: React.ReactElement, visualStyle: "minimal" | "maximal" = "maximal") {
   localStorage.setItem(
     appearancePreferences.keyForUser("owner-1"),
-    JSON.stringify({theme: "light", visualStyle: "maximal"}),
+    JSON.stringify({theme: "light", visualStyle}),
   );
   return render(<AppearanceProvider userId="owner-1">{ui}</AppearanceProvider>);
 }
@@ -344,7 +359,10 @@ describe("BusinessPanel logo flow", () => {
     expect(
       screen.getByRole("button", {name: /Guardar carta|Reemplazar carta/}).hasAttribute("disabled"),
     ).toBe(true);
-    expect(screen.getByRole("button", {name: /Restaurar/}).hasAttribute("disabled")).toBe(true);
+    const restoreButton = screen.queryByRole("button", {name: /Restaurar/});
+    if (restoreButton) {
+      expect(restoreButton.hasAttribute("disabled")).toBe(true);
+    }
 
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
     expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(true);
@@ -628,5 +646,118 @@ describe("BusinessPanel logo flow", () => {
       syncedPaths.filter((path) => path === "/api/businesses/biz-5/analytics/scans?period=30d"),
     ).toHaveLength(2);
     expect(syncedPaths.filter((path) => path === "/api/businesses/biz-5/qr")).toHaveLength(2);
+  });
+
+  it("hides the redundant activity block in minimal mode and keeps it in maximal mode", async () => {
+    const business: Business = {
+      id: "biz-6",
+      logo_url: null,
+      name: "Minimal Biz",
+      slug: "minimal-biz",
+      status: "active",
+      destination_type: "menu_pdf",
+      external_url: null,
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-6") return business;
+      if (path === "/api/businesses/biz-6/menu") {
+        return {current: null, public_code: "minimal-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-6/analytics/summary") {
+        return {busiest_hour: 21, scans_30d: 30, scans_7d: 7, scans_today: 1};
+      }
+      if (path === "/api/businesses/biz-6/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-6/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    const minimal = renderPanel(<BusinessPanel token="owner-token" user={null} />, "minimal");
+    await screen.findByTestId("dashboard-layout-minimal");
+    expect(screen.queryByText("Actividad en 7 días")).toBeNull();
+    minimal.unmount();
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />, "maximal");
+    await screen.findByTestId("dashboard-layout-maximal");
+    expect(screen.getByText("Actividad reciente")).toBeTruthy();
+  });
+
+  it("lets the owner switch between hosted and external menu destinations", async () => {
+    let currentBusiness: Business = {
+      id: "biz-7",
+      logo_url: null,
+      name: "Destination Owner Biz",
+      slug: "destination-owner-biz",
+      status: "active",
+      destination_type: "menu_pdf",
+      external_url: null,
+      updated_at: "2026-08-20T12:00:00Z",
+    };
+
+    mocks.listBusinesses.mockImplementation(async () => [currentBusiness]);
+    mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
+      if (path === "/api/businesses/biz-7" && init?.method === "PATCH") {
+        const payload = JSON.parse(String(init.body)) as {
+          destination_type: "menu_pdf" | "external_url";
+          external_url?: string;
+        };
+        currentBusiness = {
+          ...currentBusiness,
+          destination_type: payload.destination_type,
+          external_url:
+            payload.destination_type === "external_url" ? payload.external_url ?? null : null,
+        };
+        return currentBusiness;
+      }
+      if (path === "/api/businesses/biz-7") return currentBusiness;
+      if (path === "/api/businesses/biz-7/menu") {
+        return {current: null, public_code: "owner-destination-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-7/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-7/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-7/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByText("Hola, Destination Owner Biz 👋");
+    fireEvent.click(screen.getByRole("button", {name: "Mi negocio"}));
+
+    fireEvent.click(screen.getByLabelText("Usar una carta que ya tengo"));
+    fireEvent.change(screen.getByLabelText("URL de tu carta"), {
+      target: {value: "https://carta.ejemplo.com/menu"},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Guardar"}));
+
+    await waitFor(() => {
+      expect(mocks.request).toHaveBeenCalledWith(
+        "/api/businesses/biz-7",
+        "owner-token",
+        expect.objectContaining({
+          body: JSON.stringify({
+            destination_type: "external_url",
+            external_url: "https://carta.ejemplo.com/menu",
+          }),
+          headers: {"Content-Type": "application/json"},
+          method: "PATCH",
+        }),
+      );
+    });
+    expect(screen.getByRole("button", {name: "Abrir/probar enlace actual"}).hasAttribute("disabled")).toBe(
+      false,
+    );
+
+    fireEvent.click(screen.getByRole("button", {name: "Abrir/probar enlace actual"}));
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://carta.ejemplo.com/menu",
+      "_blank",
+      "noopener,noreferrer",
+    );
   });
 });

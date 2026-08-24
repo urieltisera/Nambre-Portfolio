@@ -498,11 +498,13 @@ def test_cross_tenant_qr_asset_download_is_forbidden(client, db: Session) -> Non
 
 def test_public_redirect_rejects_unsupported_dangerous_destination(client, db: Session) -> None:
     business = make_business(db, "Danger Biz", "danger-biz", BusinessStatus.active)
+    business.destination_type = DestinationType.external_url
+    business.external_url = "javascript:alert(1)"
     link = DynamicLink(
         business_id=business.id,
         public_code="danger-code",
-        destination_type=DestinationType.external_url,
-        destination_id="javascript:alert(1)",
+        destination_type=DestinationType.menu_pdf,
+        destination_id="",
         is_active=True,
     )
     db.add(link)

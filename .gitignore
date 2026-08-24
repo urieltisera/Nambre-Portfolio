@@ -13,3 +13,5 @@ coverage/
 backend/local-dev.db
 backend/*.egg-info/
 frontend/tsconfig.tsbuildinfo
+
+.env.production

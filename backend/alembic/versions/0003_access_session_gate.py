@@ -1,6 +1,6 @@
 """access and session pre-pilot gate
 
-Revision ID: 0003_access_session_prepilot_gate
+Revision ID: 0003_access_session_gate
 Revises: 0002_legal_security_gate
 Create Date: 2026-08-23
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0003_access_session_prepilot_gate"
+revision: str = "0003_access_session_gate"
 down_revision: str | None = "0002_legal_security_gate"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

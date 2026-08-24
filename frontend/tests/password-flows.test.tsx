@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {ForgotPasswordForm} from "../components/auth/ForgotPasswordForm";
 import {ResetPasswordForm} from "../components/auth/ResetPasswordForm";
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   changePassword: vi.fn(),
   confirmPasswordReset: vi.fn(),
   login: vi.fn(),
+  replace: vi.fn(),
   requestPasswordReset: vi.fn(),
 }));
 
@@ -28,12 +29,20 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    replace: mocks.replace,
+  }),
+}));
+
 afterEach(() => {
   cleanup();
   mocks.changePassword.mockReset();
   mocks.confirmPasswordReset.mockReset();
   mocks.login.mockReset();
+  mocks.replace.mockReset();
   mocks.requestPasswordReset.mockReset();
+  vi.useRealTimers();
 });
 
 function stubMatchMedia(matches = false) {
@@ -87,9 +96,12 @@ describe("Password flows", () => {
     ).toBeTruthy();
   });
 
-  it("validates password confirmation and completes reset from the emailed token", async () => {
+  it("validates password confirmation, shows success and redirects to login after a successful reset", async () => {
     stubMatchMedia(false);
+    vi.useFakeTimers();
     mocks.confirmPasswordReset.mockResolvedValue("La contraseña fue actualizada.");
+    const localSetItem = vi.spyOn(Storage.prototype, "setItem");
+    const sessionSetItem = vi.spyOn(Storage.prototype, "setItem");
 
     render(
       <AppearanceProvider>
@@ -110,10 +122,29 @@ describe("Password flows", () => {
     });
     fireEvent.submit(screen.getByRole("button", {name: "Actualizar contraseña"}).closest("form")!);
 
-    await waitFor(() => {
-      expect(mocks.confirmPasswordReset).toHaveBeenCalledWith("reset-token", "new-pass-123");
+    await act(async () => {
+      await Promise.resolve();
     });
+
+    expect(mocks.confirmPasswordReset).toHaveBeenCalledWith("reset-token", "new-pass-123");
     expect(screen.getByText("La contraseña fue actualizada.")).toBeTruthy();
+    expect(screen.getByRole("link", {name: "Volver al login"}).getAttribute("href")).toBe("/");
+    expect(mocks.replace).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    expect(mocks.replace).toHaveBeenCalledWith("/");
+    expect(mocks.confirmPasswordReset).toHaveBeenCalledTimes(1);
+    expect(localSetItem).not.toHaveBeenCalledWith(
+      expect.stringMatching(/reset|token|password/i),
+      expect.any(String),
+    );
+    expect(sessionSetItem).not.toHaveBeenCalledWith(
+      expect.stringMatching(/reset|token|password/i),
+      expect.any(String),
+    );
   });
 
   it("changes the authenticated password and refreshes the active session token", async () => {

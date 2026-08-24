@@ -1,7 +1,8 @@
 "use client";
 
-import React, {useMemo, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import Link from "next/link";
+import {useRouter} from "next/navigation";
 import {KeyRound} from "lucide-react";
 import {NambreBrand} from "@/components/brand/NambreBrand";
 import {Alert} from "@/components/ui/Alert";
@@ -11,6 +12,7 @@ import {Input} from "@/components/ui/Input";
 import {confirmPasswordReset} from "@/lib/api";
 
 export function ResetPasswordForm({initialToken}: {initialToken: string}) {
+  const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,6 +24,16 @@ export function ResetPasswordForm({initialToken}: {initialToken: string}) {
     () => confirmPassword.length > 0 && password !== confirmPassword,
     [confirmPassword, password],
   );
+
+  useEffect(() => {
+    if (!message) return;
+    const timeoutId = window.setTimeout(() => {
+      router.replace("/");
+    }, 1500);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [message, router]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

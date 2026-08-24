@@ -358,18 +358,193 @@ def test_switching_business_to_digital_menu_keeps_public_code_and_serves_public_
 
     redirect = client.get(f"/r/{original_code}")
     assert redirect.status_code == 302
-    assert redirect.headers["location"] == f"/m/{original_code}/digital-menu"
+    assert redirect.headers["location"] == f"/m/{original_code}"
 
-    public_menu = client.get(redirect.headers["location"])
+    public_menu = client.get(f"/api/public/digital-menus/{original_code}")
     assert public_menu.status_code == 200
     public_body = public_menu.json()
-    assert public_body["name"] == "Carta publica"
+    assert public_body["business"]["name"] == "Public Menu Biz"
+    assert public_body["menu"]["name"] == "Carta publica"
     assert public_body["categories"][0]["name"] == "Destacados"
     assert public_body["categories"][0]["items"][0]["name"] == "Empanada"
 
     refreshed_business = db.get(Business, business.id)
     assert refreshed_business is not None
     assert refreshed_business.destination_type == DestinationType.digital_menu
+
+
+def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "public-page-owner@example.com")
+    business = make_business(
+        db, "Public Page Biz", "public-page-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+        json={
+            "name": "Carta publica",
+            "template_key": "modern",
+            "status": "published",
+            "is_published": True,
+        },
+    ).json()
+
+    mains = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=auth_headers(owner),
+        json={"name": "Principales", "description": "Platos fuertes", "position": 2},
+    ).json()
+    drinks = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=auth_headers(owner),
+        json={"name": "Bebidas", "position": 1},
+    ).json()
+    hidden = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=auth_headers(owner),
+        json={"name": "Secretos", "position": 0, "is_visible": False},
+    ).json()
+
+    assert (
+        client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{drinks['id']}/items",
+            headers=auth_headers(owner),
+            json={
+                "name": "Agua con gas",
+                "price": "1800.00",
+                "currency": "ARS",
+                "position": 1,
+                "is_available": False,
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{drinks['id']}/items",
+            headers=auth_headers(owner),
+            json={
+                "name": "Limonada",
+                "price": "2200.00",
+                "currency": "ARS",
+                "position": 0,
+                "is_featured": True,
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{mains['id']}/items",
+            headers=auth_headers(owner),
+            json={
+                "name": "Milanesa napolitana",
+                "description": "Con papas",
+                "price": "9500.00",
+                "currency": "ARS",
+                "position": 0,
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{mains['id']}/items",
+            headers=auth_headers(owner),
+            json={
+                "name": "Oculto",
+                "price": "100.00",
+                "currency": "ARS",
+                "position": 99,
+                "is_visible": False,
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{hidden['id']}/items",
+            headers=auth_headers(owner),
+            json={
+                "name": "Nunca publico",
+                "price": "500.00",
+                "currency": "ARS",
+                "position": 0,
+            },
+        ).status_code
+        == 200
+    )
+
+    switched = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    response = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["business"]["name"] == "Public Page Biz"
+    assert body["menu"]["name"] == "Carta publica"
+    assert [category["name"] for category in body["categories"]] == ["Bebidas", "Principales"]
+    assert [item["name"] for item in body["categories"][0]["items"]] == [
+        "Limonada",
+        "Agua con gas",
+    ]
+    assert body["categories"][0]["items"][0]["is_featured"] is True
+    assert body["categories"][0]["items"][1]["is_available"] is False
+    assert [item["name"] for item in body["categories"][1]["items"]] == [
+        "Milanesa napolitana"
+    ]
+
+    legacy_payload = client.get(f"/m/{link.public_code}/digital-menu")
+    assert legacy_payload.status_code == 200
+    assert [category["name"] for category in legacy_payload.json()["categories"]] == [
+        "Bebidas",
+        "Principales",
+    ]
+
+
+def test_public_digital_menu_page_returns_safe_unavailable_message_when_menu_cannot_be_served(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "public-page-safe-owner@example.com")
+    business = make_business(
+        db,
+        "Unavailable Public Page Biz",
+        "unavailable-public-page-biz",
+        plan_key=BusinessPlanKey.premium,
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+        json={"name": "Carta oculta"},
+    )
+    assert menu.status_code == 200
+
+    switched = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    response = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert response.status_code == 403
+    assert response.text == "Este menú no se encuentra disponible actualmente."
 
 
 def test_essential_business_cannot_use_private_digital_menu_endpoints(client, db: Session) -> None:

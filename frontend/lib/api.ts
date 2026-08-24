@@ -50,6 +50,41 @@ export type DigitalMenu = {
   updated_at: string;
 };
 
+export type PublicBusinessSummary = {
+  id: string;
+  name: string;
+  logo_url: string | null;
+};
+
+export type PublicMenuItem = {
+  id: string;
+  category_id: string;
+  name: string;
+  description: string | null;
+  price: string;
+  currency: string;
+  image_url: string | null;
+  position: number;
+  is_visible: boolean;
+  is_available: boolean;
+  is_featured: boolean;
+};
+
+export type PublicMenuCategorySection = {
+  id: string;
+  name: string;
+  description: string | null;
+  position: number;
+  is_visible: boolean;
+  items: PublicMenuItem[];
+};
+
+export type PublicDigitalMenuPage = {
+  business: PublicBusinessSummary;
+  menu: DigitalMenu;
+  categories: PublicMenuCategorySection[];
+};
+
 export type MenuCategory = {
   id: string;
   digital_menu_id: string;
@@ -462,6 +497,18 @@ export async function fetchDigitalMenu(
     }
     throw error;
   }
+}
+
+export async function fetchPublicDigitalMenu(
+  publicCode: string,
+): Promise<PublicDigitalMenuPage> {
+  const response = await fetch(`/api/public/digital-menus/${publicCode}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorDetail(response));
+  }
+  return response.json() as Promise<PublicDigitalMenuPage>;
 }
 
 export async function createDigitalMenu(

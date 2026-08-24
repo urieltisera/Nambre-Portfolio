@@ -25,8 +25,9 @@ import {
   updateMenuCategory,
   updateMenuItem,
 } from "@/lib/api";
+import {formatArsPrice} from "@/lib/money";
 import {CategoryForm, CategoryFormValues} from "./CategoryForm";
-import {formatArsPrice, MenuItemForm, MenuItemFormValues} from "./MenuItemForm";
+import {MenuItemForm, MenuItemFormValues} from "./MenuItemForm";
 
 type CategoryEditorState =
   | {mode: "create"}

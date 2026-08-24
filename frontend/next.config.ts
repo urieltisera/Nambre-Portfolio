@@ -11,7 +11,6 @@ const nextConfig: NextConfig = {
       {source: "/admin/:path*", destination: `${proxyTarget}/admin/:path*`},
       {source: "/logos/:path*", destination: `${proxyTarget}/logos/:path*`},
       {source: "/r/:path*", destination: `${proxyTarget}/r/:path*`},
-      {source: "/m/:path*", destination: `${proxyTarget}/m/:path*`},
       {source: "/docs", destination: `${proxyTarget}/docs`},
       {source: "/openapi.json", destination: `${proxyTarget}/openapi.json`},
     ];

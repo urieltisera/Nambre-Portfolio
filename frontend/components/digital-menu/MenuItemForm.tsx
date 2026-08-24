@@ -3,6 +3,7 @@
 import React, {useEffect, useState} from "react";
 import {Button} from "@/components/ui/Button";
 import {Input} from "@/components/ui/Input";
+import {formatArsPrice} from "@/lib/money";
 
 export type MenuItemFormValues = {
   currency: string;
@@ -44,19 +45,6 @@ export function normalizePriceInput(value: string): string | null {
     return whole;
   }
   return `${whole}.${decimals.padEnd(2, "0")}`;
-}
-
-export function formatArsPrice(value: string): string {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) {
-    return "$ —";
-  }
-  return new Intl.NumberFormat("es-AR", {
-    currency: "ARS",
-    maximumFractionDigits: value.includes(".") ? 2 : 0,
-    minimumFractionDigits: value.includes(".") ? Number(value.split(".")[1]?.length ?? 0) : 0,
-    style: "currency",
-  }).format(amount);
 }
 
 export function MenuItemForm({

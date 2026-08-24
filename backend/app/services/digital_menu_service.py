@@ -313,10 +313,18 @@ def get_public_digital_menu_payload(
                 "name": category.name,
                 "description": category.description,
                 "position": category.position,
+                "is_visible": category.is_visible,
                 "items": items_by_category.get(category.id, []),
             }
         )
     return business, menu, serialized_categories
+
+
+def get_public_digital_menu_page_payload(
+    db: Session, public_code: str
+) -> tuple[Business, DigitalMenu, list[dict[str, object]]]:
+    business, menu, categories = get_public_digital_menu_payload(db, public_code)
+    return business, menu, categories
 
 
 def _resolve_publication_fields(

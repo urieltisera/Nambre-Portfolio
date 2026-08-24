@@ -91,6 +91,7 @@ from app.schemas import (
     PasswordResetConfirmIn,
     PasswordResetRequestIn,
     PublicDigitalMenuOut,
+    PublicDigitalMenuPageOut,
     QRCodeOut,
     RollbackIn,
     TokenOut,
@@ -109,6 +110,7 @@ from app.services.digital_menu_service import (
     create_menu_category,
     create_menu_item,
     get_business_digital_menu,
+    get_public_digital_menu_page_payload,
     get_public_digital_menu_payload,
     list_menu_categories,
     list_menu_items,
@@ -1013,7 +1015,7 @@ def public_redirect(
             raise HTTPException(status_code=404, detail="Not found")
         db.commit()
         return RedirectResponse(
-            url=_public_digital_menu_url(public_code),
+            url=_public_menu_page_url(public_code),
             status_code=302,
             headers=_dynamic_public_cache_headers(),
         )
@@ -1054,6 +1056,45 @@ def public_digital_menu(
         business_id=menu.business_id,
         name=menu.name,
         template_key=menu.template_key,
+        categories=categories,
+    )
+
+
+@router.get("/api/public/digital-menus/{public_code}", response_model=PublicDigitalMenuPageOut)
+def public_digital_menu_page_data(
+    public_code: str, db: Session = Depends(get_db)
+) -> PublicDigitalMenuPageOut | PlainTextResponse:
+    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
+    if link is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    business = db.get(Business, link.business_id)
+    if (
+        business is None
+        or not link.is_active
+        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
+    ):
+        return PlainTextResponse(
+            "Este menú no se encuentra disponible actualmente.", status_code=403
+        )
+    if not business_has_feature(business, BusinessFeatureKey.digital_menu):
+        return PlainTextResponse(
+            "Este menú no se encuentra disponible actualmente.", status_code=403
+        )
+    try:
+        business, menu, categories = get_public_digital_menu_page_payload(db, public_code)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return PlainTextResponse(
+                "Este menú no se encuentra disponible actualmente.", status_code=403
+            )
+        raise
+    return PublicDigitalMenuPageOut(
+        business={
+            "id": business.id,
+            "logo_url": business.logo_url,
+            "name": business.name,
+        },
+        menu=menu,
         categories=categories,
     )
 
@@ -1378,6 +1419,10 @@ def _public_menu_url(public_code: str) -> str:
 
 def _public_digital_menu_url(public_code: str) -> str:
     return f"/m/{public_code}/digital-menu"
+
+
+def _public_menu_page_url(public_code: str) -> str:
+    return f"/m/{public_code}"
 
 
 def _list_all_businesses(db: Session) -> list[Business]:

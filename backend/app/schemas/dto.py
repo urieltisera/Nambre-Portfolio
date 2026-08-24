@@ -382,6 +382,44 @@ class PublicDigitalMenuOut(BaseModel):
     categories: list[PublicMenuCategoryOut]
 
 
+class PublicBusinessSummaryOut(BaseModel):
+    id: str
+    name: str
+    logo_url: str | None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PublicMenuItemCardOut(BaseModel):
+    id: str
+    category_id: str
+    name: str
+    description: str | None
+    price: Decimal
+    currency: str
+    image_url: str | None
+    position: int
+    is_visible: bool
+    is_available: bool
+    is_featured: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PublicMenuCategorySectionOut(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    position: int
+    is_visible: bool
+    items: list[PublicMenuItemCardOut]
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PublicDigitalMenuPageOut(BaseModel):
+    business: PublicBusinessSummaryOut
+    menu: DigitalMenuOut
+    categories: list[PublicMenuCategorySectionOut]
+
+
 class RollbackIn(BaseModel):
     menu_asset_id: str
 

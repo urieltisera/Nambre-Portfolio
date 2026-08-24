@@ -16,6 +16,7 @@ from app.models import (
     MembershipRole,
     MenuItem,
 )
+from app.services.invitation_service import issue_invitation
 from app.storage.local import LocalStorage
 from tests.conftest import add_membership, auth_headers, make_business, make_user
 
@@ -118,6 +119,10 @@ def _publish_menu(
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _bearer_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_owner_can_create_and_read_digital_menu(client, db: Session) -> None:
@@ -1213,6 +1218,177 @@ def test_multi_tenant_digital_menu_abuse_is_blocked_across_private_endpoints(
         headers=headers_a,
     )
     assert unaffected.status_code == 405
+
+
+def test_pilot_onboarding_publish_qr_draft_publish_and_downgrade_flow(
+    client, db: Session
+) -> None:
+    admin = make_user(db, "platform-admin@example.com", admin=True)
+    invite = issue_invitation(db, business_name="Pilot Bistro", email="pilot-owner@example.com")
+    db.commit()
+
+    activation = client.post(
+        "/auth/invitations/accept",
+        json={
+            "token": invite.token,
+            "new_password": "pilot-owner-pass-123",
+            "accept_legal": True,
+        },
+    )
+    assert activation.status_code == 200
+
+    login = client.post(
+        "/auth/login",
+        json={"email": "pilot-owner@example.com", "password": "pilot-owner-pass-123"},
+    )
+    assert login.status_code == 200
+    owner_headers = _bearer_headers(login.json()["access_token"])
+
+    businesses = client.get("/api/me/businesses", headers=owner_headers)
+    assert businesses.status_code == 200
+    business = businesses.json()[0]
+    business_id = business["id"]
+
+    upgraded = client.patch(
+        f"/admin/businesses/{business_id}",
+        headers=auth_headers(admin),
+        json={"plan_key": "premium", "status": "active"},
+    )
+    assert upgraded.status_code == 200
+    assert upgraded.json()["plan_key"] == "premium"
+
+    uploaded_pdf = client.post(
+        f"/api/businesses/{business_id}/menu/replace",
+        headers=owner_headers,
+        files=_pdf_upload(),
+    )
+    assert uploaded_pdf.status_code == 200
+
+    menu = client.post(
+        f"/api/businesses/{business_id}/digital-menu",
+        headers=owner_headers,
+        json={"name": "Carta piloto"},
+    )
+    assert menu.status_code == 200
+    menu_id = menu.json()["id"]
+
+    category = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/categories",
+        headers=owner_headers,
+        json={"name": "Principales", "position": 0},
+    )
+    assert category.status_code == 200
+    category_id = category.json()["id"]
+
+    item = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/categories/{category_id}/items",
+        headers=owner_headers,
+        json={
+            "name": "Milanesa piloto",
+            "description": "Con papas",
+            "price": "1500.00",
+            "currency": "ARS",
+            "position": 0,
+            "is_featured": True,
+        },
+    )
+    assert item.status_code == 200
+    item_id = item.json()["id"]
+
+    image = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}/image",
+        headers=owner_headers,
+        files=_image_upload("producto.png", _image_bytes(format_name="PNG"), "image/png"),
+    )
+    assert image.status_code == 200
+
+    theme = client.patch(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}",
+        headers=owner_headers,
+        json={"theme": {"accent_color": "#1F3A2D", "background_color": "#E8F0EA"}},
+    )
+    assert theme.status_code == 200
+
+    preview_v1 = client.get(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/preview",
+        headers=owner_headers,
+    )
+    assert preview_v1.status_code == 200
+    assert preview_v1.json()["categories"][0]["items"][0]["price"] == "1500.00"
+
+    published_v1 = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/publish",
+        headers=owner_headers,
+    )
+    assert published_v1.status_code == 200
+    assert published_v1.json()["version"] == 1
+
+    switched = client.patch(
+        f"/api/businesses/{business_id}",
+        headers=owner_headers,
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+    assert switched.json()["destination_type"] == "digital_menu"
+
+    menu_state = client.get(f"/api/businesses/{business_id}/menu", headers=owner_headers)
+    assert menu_state.status_code == 200
+    public_code = menu_state.json()["public_code"]
+    assert public_code
+
+    qr = client.post(f"/api/businesses/{business_id}/qr/generate", headers=owner_headers)
+    assert qr.status_code == 200
+
+    redirect_v1 = client.get(f"/r/{public_code}", headers={"User-Agent": "Mobile Safari"})
+    assert redirect_v1.status_code == 302
+    assert redirect_v1.headers["location"] == f"/m/{public_code}"
+    public_v1 = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_v1.status_code == 200
+    assert public_v1.json()["categories"][0]["items"][0]["price"] == "1500.00"
+
+    price_patch = client.patch(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}",
+        headers=owner_headers,
+        json={"price": "1800.00"},
+    )
+    assert price_patch.status_code == 200
+
+    public_still_v1 = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_still_v1.status_code == 200
+    assert public_still_v1.json()["categories"][0]["items"][0]["price"] == "1500.00"
+
+    preview_v2 = client.get(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/preview",
+        headers=owner_headers,
+    )
+    assert preview_v2.status_code == 200
+    assert preview_v2.json()["categories"][0]["items"][0]["price"] == "1800.00"
+
+    published_v2 = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/publish",
+        headers=owner_headers,
+    )
+    assert published_v2.status_code == 200
+    assert published_v2.json()["version"] == 2
+
+    redirect_v2 = client.get(f"/r/{public_code}", headers={"User-Agent": "Mobile Safari"})
+    assert redirect_v2.status_code == 302
+    assert redirect_v2.headers["location"] == redirect_v1.headers["location"]
+    public_v2 = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_v2.status_code == 200
+    assert public_v2.json()["categories"][0]["items"][0]["price"] == "1800.00"
+
+    downgraded = client.patch(
+        f"/admin/businesses/{business_id}",
+        headers=auth_headers(admin),
+        json={"plan_key": "essential"},
+    )
+    assert downgraded.status_code == 200
+    assert downgraded.json()["destination_type"] == "menu_pdf"
+
+    redirect_after_downgrade = client.get(f"/r/{public_code}")
+    assert redirect_after_downgrade.status_code == 302
+    assert redirect_after_downgrade.headers["location"] == f"/m/{public_code}/menu.pdf"
 
 
 def test_theme_changes_stay_in_draft_until_publish(client, db: Session) -> None:

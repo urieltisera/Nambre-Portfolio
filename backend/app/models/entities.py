@@ -107,6 +107,7 @@ class User(Base):
     legal_acceptances: Mapped[list["LegalAcceptance"]] = relationship(back_populates="user")
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
     password_reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(back_populates="user")
+    invitation_tokens: Mapped[list["InvitationToken"]] = relationship()
 
 
 class Membership(Base):
@@ -248,6 +249,20 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     user: Mapped[User] = relationship(back_populates="password_reset_tokens")
+
+
+class InvitationToken(Base):
+    __tablename__ = "invitation_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    business_id: Mapped[str] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
 class AuditEvent(Base):

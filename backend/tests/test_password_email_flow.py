@@ -168,3 +168,56 @@ def test_password_reset_email_includes_html_and_plain_fallback(
     assert "Si no solicitaste este cambio, podés ignorar este mensaje." in html_content
     assert ">reset-token-123<" not in html_content
     assert "\nreset-token-123\n" not in plain_content
+
+
+def test_invitation_email_includes_html_and_plain_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _FakeSMTP.sent_messages = []
+    _FakeSMTP.started_tls = False
+    _FakeSMTP.logged_in_with = None
+
+    monkeypatch.setattr(
+        email_service,
+        "get_settings",
+        lambda: SimpleNamespace(
+            frontend_base_url="https://app.nambre.test",
+            invitation_token_hours=48,
+            smtp_host="smtp.nambre.test",
+            smtp_port=587,
+            smtp_username="mailer",
+            smtp_password="secret",
+            smtp_from_email="no-reply@nambre.test",
+            smtp_from_name="Nambre",
+            smtp_use_tls=True,
+            smtp_use_ssl=False,
+            smtp_timeout_seconds=10,
+        ),
+    )
+    monkeypatch.setattr(email_service.smtplib, "SMTP", _FakeSMTP)
+
+    email_service.send_invitation_email("invitee@example.com", "invite-token-123")
+
+    assert len(_FakeSMTP.sent_messages) == 1
+    message = _FakeSMTP.sent_messages[0]
+    plain_part = message.get_body(preferencelist=("plain",))
+    html_part = message.get_body(preferencelist=("html",))
+    invitation_url = "https://app.nambre.test/activate-account?token=invite-token-123"
+
+    assert message["Subject"] == "Tu acceso a Nambre está listo"
+    assert plain_part is not None
+    assert html_part is not None
+
+    plain_content = plain_part.get_content()
+    html_content = html_part.get_content()
+
+    assert "El equipo de Nambre habilitó tu acceso" in plain_content
+    assert "El equipo de Nambre habilitó tu acceso" in html_content
+    assert "Crear contraseña" in html_content
+    assert f'href="{invitation_url}"' in html_content
+    assert invitation_url in plain_content
+    assert "48 horas y solo puede usarse una vez" in plain_content
+    assert "48 horas y solo puede usarse una vez" in html_content
+    assert "documentos legales vigentes" in plain_content
+    assert "documentos legales vigentes" in html_content
+    assert ">invite-token-123<" not in html_content

@@ -8,6 +8,7 @@ import {AppearanceProvider} from "../components/ui/AppearanceProvider";
 import type {Business} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
+  inviteClient: vi.fn(),
   listBusinesses: vi.fn(),
   request: vi.fn(),
 }));
@@ -16,6 +17,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("@/lib/api");
   return {
     ...actual,
+    inviteClient: mocks.inviteClient,
     listBusinesses: mocks.listBusinesses,
     request: mocks.request,
   };
@@ -23,6 +25,7 @@ vi.mock("@/lib/api", async () => {
 
 afterEach(() => {
   cleanup();
+  mocks.inviteClient.mockReset();
   mocks.listBusinesses.mockReset();
   mocks.request.mockReset();
 });
@@ -36,7 +39,7 @@ function rowFor(text: string): HTMLElement {
 }
 
 describe("AdminPanel", () => {
-  it("renders all businesses, exposes valid actions, updates status and reloads after creation", async () => {
+  it("renders all businesses, exposes valid actions, updates status and sends invitations", async () => {
     const businesses: Business[] = [
       {id: "biz-1", logo_url: null, name: "Bar Central", slug: "bar-central", status: "active"},
       {id: "biz-2", logo_url: null, name: "Cafe Norte", slug: "cafe-norte", status: "demo"},
@@ -47,21 +50,20 @@ describe("AdminPanel", () => {
       logo_url: null,
       name: "Pizzeria Sur",
       slug: "pizzeria-sur",
-      status: "suspended",
+      status: "active",
     };
 
     mocks.listBusinesses
       .mockResolvedValueOnce(businesses)
       .mockResolvedValueOnce([...businesses, created]);
+    mocks.inviteClient.mockResolvedValue({
+      business_id: "biz-4",
+      email: "owner@sur.com",
+      message: "Invitación enviada a owner@sur.com",
+    });
     mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
       if (path === "/admin/businesses/biz-2" && init?.method === "PATCH") {
         return {...businesses[1], status: "active"};
-      }
-      if (path === "/admin/businesses" && init?.method === "POST") {
-        return created;
-      }
-      if (path === "/admin/businesses/biz-4/owner" && init?.method === "POST") {
-        return {email: "owner@sur.com", id: "owner-4", is_platform_admin: false};
       }
       throw new Error(`Unhandled request: ${path}`);
     });
@@ -80,9 +82,6 @@ describe("AdminPanel", () => {
     expect(screen.getAllByText("Activo").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Demo").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Suspendido").length).toBeGreaterThan(0);
-
-    fireEvent.change(screen.getByPlaceholderText("Nombre"), {target: {value: "Cafe Norte Deluxe"}});
-    expect(screen.getByPlaceholderText("Slug").getAttribute("value")).toBe("cafe-norte-deluxe");
 
     const demoRow = rowFor("Cafe Norte");
     expect(within(demoRow).getByRole("button", {name: "Activar"})).toBeTruthy();
@@ -108,31 +107,23 @@ describe("AdminPanel", () => {
       expect(within(demoRow).queryByRole("button", {name: "Activar"})).toBeNull();
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Nombre"), {target: {value: "Pizzeria Sur"}});
-    fireEvent.change(screen.getByPlaceholderText("Slug"), {target: {value: "pizzeria-sur"}});
-    fireEvent.change(screen.getByPlaceholderText("Owner email"), {target: {value: "owner@sur.com"}});
-    fireEvent.change(screen.getByPlaceholderText("Password owner"), {target: {value: "owner12345"}});
-    fireEvent.change(screen.getByDisplayValue("Activo"), {target: {value: "suspended"}});
-    fireEvent.click(screen.getByRole("button", {name: "Crear negocio"}));
+    fireEvent.change(screen.getByPlaceholderText("Nombre del negocio"), {
+      target: {value: "Pizzeria Sur"},
+    });
+    fireEvent.change(screen.getByPlaceholderText("Email del cliente"), {
+      target: {value: "owner@sur.com"},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Invitar cliente"}));
 
     await waitFor(() => {
-      expect(mocks.request).toHaveBeenCalledWith(
-        "/admin/businesses",
+      expect(mocks.inviteClient).toHaveBeenCalledWith(
         "admin-token",
-        expect.objectContaining({method: "POST"}),
-      );
-      expect(mocks.request).toHaveBeenCalledWith(
-        "/admin/businesses/biz-4/owner",
-        "admin-token",
-        expect.objectContaining({method: "POST"}),
+        "Pizzeria Sur",
+        "owner@sur.com",
       );
     });
     expect(await screen.findByText("Pizzeria Sur")).toBeTruthy();
-    expect(
-      screen
-        .getAllByText("Suspendido")
-        .filter((element) => element.tagName.toLowerCase() === "p"),
-    ).toHaveLength(2);
+    expect(screen.getByText("Invitación enviada a owner@sur.com")).toBeTruthy();
     expect(mocks.listBusinesses).toHaveBeenCalledTimes(2);
   }, 15000);
 });

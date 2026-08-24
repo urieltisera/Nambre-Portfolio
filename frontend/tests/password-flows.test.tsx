@@ -3,6 +3,7 @@
 import React from "react";
 import {act, cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
+import {ActivateAccountForm} from "../components/auth/ActivateAccountForm";
 import {ForgotPasswordForm} from "../components/auth/ForgotPasswordForm";
 import {ResetPasswordForm} from "../components/auth/ResetPasswordForm";
 import {LoginForm} from "../components/auth/LoginForm";
@@ -11,6 +12,7 @@ import {AppearanceProvider} from "../components/ui/AppearanceProvider";
 import {type Business, type User} from "../lib/api";
 
 const mocks = vi.hoisted(() => ({
+  acceptInvitation: vi.fn(),
   changePassword: vi.fn(),
   confirmPasswordReset: vi.fn(),
   login: vi.fn(),
@@ -22,6 +24,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("@/lib/api");
   return {
     ...actual,
+    acceptInvitation: mocks.acceptInvitation,
     changePassword: mocks.changePassword,
     confirmPasswordReset: mocks.confirmPasswordReset,
     login: mocks.login,
@@ -38,6 +41,7 @@ vi.mock("next/navigation", () => ({
 afterEach(() => {
   cleanup();
   mocks.changePassword.mockReset();
+  mocks.acceptInvitation.mockReset();
   mocks.confirmPasswordReset.mockReset();
   mocks.login.mockReset();
   mocks.replace.mockReset();
@@ -145,6 +149,79 @@ describe("Password flows", () => {
       expect.stringMatching(/reset|token|password/i),
       expect.any(String),
     );
+  });
+
+  it("activates an invited account, requires legal acceptance and redirects to login", async () => {
+    stubMatchMedia(false);
+    vi.useFakeTimers();
+    mocks.acceptInvitation.mockResolvedValue("Tu cuenta fue activada.");
+
+    render(
+      <AppearanceProvider>
+        <ActivateAccountForm initialToken="invite-token" />
+      </AppearanceProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Nueva contraseña"), {target: {value: "new-pass-123"}});
+    fireEvent.change(screen.getByLabelText("Confirmar contraseña"), {
+      target: {value: "other-pass"},
+    });
+    expect(screen.getByRole("button", {name: "Crear contraseña"}).hasAttribute("disabled")).toBe(
+      true,
+    );
+
+    fireEvent.change(screen.getByLabelText("Confirmar contraseña"), {
+      target: {value: "new-pass-123"},
+    });
+    fireEvent.click(
+      screen.getByLabelText("Aceptar documentos legales vigentes para activar la cuenta"),
+    );
+    fireEvent.submit(screen.getByRole("button", {name: "Crear contraseña"}).closest("form")!);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.acceptInvitation).toHaveBeenCalledWith("invite-token", "new-pass-123", true);
+    expect(screen.getByText("Tu cuenta fue activada.")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(mocks.replace).toHaveBeenCalledWith("/");
+  });
+
+  it("shows clear activation errors for missing token and missing legal acceptance", async () => {
+    stubMatchMedia(false);
+
+    const {rerender} = render(
+      <AppearanceProvider>
+        <ActivateAccountForm initialToken="" />
+      </AppearanceProvider>,
+    );
+
+    expect(
+      screen.getByText(
+        "La invitación es inválida, expiró o ya fue utilizada. Pedile a tu admin una nueva invitación.",
+      ),
+    ).toBeTruthy();
+
+    rerender(
+      <AppearanceProvider>
+        <ActivateAccountForm initialToken="invite-token" />
+      </AppearanceProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Nueva contraseña"), {target: {value: "new-pass-123"}});
+    fireEvent.change(screen.getByLabelText("Confirmar contraseña"), {
+      target: {value: "new-pass-123"},
+    });
+    fireEvent.submit(screen.getByRole("button", {name: "Crear contraseña"}).closest("form")!);
+
+    expect(
+      await screen.findByText(
+        "Necesitás aceptar los documentos legales vigentes para activar la cuenta.",
+      ),
+    ).toBeTruthy();
   });
 
   it("changes the authenticated password and refreshes the active session token", async () => {

@@ -48,6 +48,12 @@ export type User = {
   is_platform_admin: boolean;
 };
 
+export type InvitationResponse = {
+  business_id: string;
+  email: string;
+  message: string;
+};
+
 export type LegalDocumentType =
   | "terms"
   | "privacy"
@@ -213,6 +219,44 @@ export async function confirmPasswordReset(token: string, newPassword: string): 
   return data.message;
 }
 
+export async function acceptInvitation(
+  token: string,
+  newPassword: string,
+  acceptLegal: boolean,
+): Promise<string> {
+  const response = await fetch(`${API}/auth/invitations/accept`, {
+    credentials: "include",
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      token,
+      new_password: newPassword,
+      accept_legal: acceptLegal,
+    }),
+  });
+  if (!response.ok) {
+    if (response.status === 400) {
+      const detail = await readErrorDetail(response);
+      if (
+        detail === "Invitation expired" ||
+        detail === "Invitation already used" ||
+        detail === "Invalid invitation token"
+      ) {
+        throw new Error(
+          "La invitación es inválida, expiró o ya fue utilizada. Pedile a tu admin una nueva invitación.",
+        );
+      }
+      if (detail === "Legal acceptance is required") {
+        throw new Error("Necesitás aceptar los documentos legales vigentes para activar la cuenta.");
+      }
+      throw new Error(detail);
+    }
+    throw new Error("No se pudo activar la cuenta.");
+  }
+  const data = (await response.json()) as MessageResponse;
+  return data.message;
+}
+
 export async function changePassword(
   token: string | null | undefined,
   currentPassword: string,
@@ -278,6 +322,18 @@ export async function listBusinesses(
   isPlatformAdmin = false,
 ): Promise<Business[]> {
   return request<Business[]>(isPlatformAdmin ? "/admin/businesses" : "/api/me/businesses", token);
+}
+
+export async function inviteClient(
+  token: string | null | undefined,
+  businessName: string,
+  email: string,
+): Promise<InvitationResponse> {
+  return request<InvitationResponse>("/admin/invitations", token, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({business_name: businessName, email}),
+  });
 }
 
 export function formatPeakHour(hour: number | null): string {
@@ -366,6 +422,31 @@ export function createBusinessErrorMessage(error: unknown): string {
     return error.detail;
   }
   return "No se pudo crear el negocio.";
+}
+
+export function inviteClientErrorMessage(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "No se pudo conectar con el servidor para enviar la invitación.";
+  }
+  if (error instanceof ApiError) {
+    if (error.detail === "Business already exists") {
+      return "Ya existe un negocio con ese nombre. Elegí otro nombre para evitar duplicados.";
+    }
+    if (error.detail === "User email already exists with an active account") {
+      return "Ese email ya tiene una cuenta activa. Este flujo no reemplaza credenciales existentes.";
+    }
+    if (error.detail === "There is already a pending invitation for this email") {
+      return "Ese email ya tiene una invitación pendiente.";
+    }
+    if (error.detail === "SMTP invitation delivery is not configured") {
+      return "El envío de invitaciones por email no está configurado.";
+    }
+    if (error.detail === "Invitation email delivery failed") {
+      return "No se pudo enviar la invitación por email.";
+    }
+    return error.detail;
+  }
+  return "No se pudo enviar la invitación.";
 }
 
 export function qrPreviewErrorMessage(error: unknown): string {

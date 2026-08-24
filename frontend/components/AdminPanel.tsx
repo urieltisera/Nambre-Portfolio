@@ -11,10 +11,10 @@ import {
   adminBusinessActions,
   businessStatusLabel,
   Business,
-  createBusinessErrorMessage,
+  inviteClient,
+  inviteClientErrorMessage,
   listBusinesses,
   request,
-  slugifyBusinessName,
 } from "@/lib/api";
 
 export function AdminPanel({
@@ -26,15 +26,12 @@ export function AdminPanel({
 }) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [owner, setOwner] = useState("");
-  const [password, setPassword] = useState("");
-  const [status, setStatus] = useState<Business["status"]>("active");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,32 +49,20 @@ export function AdminPanel({
     void load();
   }, [load]);
 
-  async function create() {
-    setCreating(true);
+  async function invite() {
+    setInviting(true);
     setError("");
+    setInviteMessage("");
     try {
-      const business = await request<Business>("/admin/businesses", token, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({name, slug, status}),
-      });
-      if (owner && password) {
-        await request(`/admin/businesses/${business.id}/owner`, token, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({email: owner, password, role: "owner"}),
-        });
-      }
+      const response = await inviteClient(token, name, email);
       setName("");
-      setSlug("");
-      setSlugTouched(false);
-      setOwner("");
-      setPassword("");
+      setEmail("");
+      setInviteMessage(response.message);
       await load();
     } catch (error: unknown) {
-      setError(createBusinessErrorMessage(error));
+      setError(inviteClientErrorMessage(error));
     } finally {
-      setCreating(false);
+      setInviting(false);
     }
   }
 
@@ -98,18 +83,6 @@ export function AdminPanel({
     } finally {
       setSavingId(null);
     }
-  }
-
-  function handleNameChange(value: string) {
-    setName(value);
-    if (!slugTouched) {
-      setSlug(slugifyBusinessName(value));
-    }
-  }
-
-  function handleSlugChange(value: string) {
-    setSlugTouched(true);
-    setSlug(value);
   }
 
   return (
@@ -160,18 +133,30 @@ export function AdminPanel({
         </Card>
 
         <Card className="admin-create-panel panel-stack" data-testid="admin-create-panel">
-          <h2>CREAR NEGOCIO</h2>
-          <input className="ui-input" placeholder="Nombre" value={name} onChange={(event) => handleNameChange(event.target.value)} />
-          <input className="ui-input" placeholder="Slug" value={slug} onChange={(event) => handleSlugChange(event.target.value)} />
-          <input className="ui-input" placeholder="Owner email" value={owner} onChange={(event) => setOwner(event.target.value)} />
-          <input className="ui-input" placeholder="Password owner" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-          <select className="ui-input" value={status} onChange={(event) => setStatus(event.target.value as Business["status"])}>
-            <option value="active">Activo</option>
-            <option value="demo">Demo</option>
-            <option value="suspended">Suspendido</option>
-          </select>
-          <Button disabled={creating || !name.trim() || !slug.trim()} onClick={() => void create()}>
-            <Plus size={18} /> {creating ? "Creando..." : "Crear negocio"}
+          <h2>INVITAR CLIENTE</h2>
+          <p className="muted">
+            Creamos el negocio, dejamos la cuenta pendiente y enviamos un email para que el
+            cliente defina su propia contraseña.
+          </p>
+          <input
+            className="ui-input"
+            placeholder="Nombre del negocio"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <input
+            className="ui-input"
+            placeholder="Email del cliente"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          {inviteMessage ? <p className="success">{inviteMessage}</p> : null}
+          <Button
+            disabled={inviting || !name.trim() || !email.trim()}
+            onClick={() => void invite()}
+          >
+            <Plus size={18} /> {inviting ? "Enviando..." : "Invitar cliente"}
           </Button>
         </Card>
       </div>

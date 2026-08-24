@@ -42,6 +42,12 @@ class PasswordResetConfirmIn(BaseModel):
     new_password: str
 
 
+class InvitationAcceptIn(BaseModel):
+    token: str
+    new_password: str
+    accept_legal: bool = False
+
+
 class UserOut(BaseModel):
     id: str
     email: EmailStr
@@ -77,6 +83,17 @@ class OwnerAssignIn(BaseModel):
     email: EmailStr
     password: str
     role: MembershipRole = MembershipRole.owner
+
+
+class AdminInviteIn(BaseModel):
+    business_name: str
+    email: EmailStr
+
+
+class InvitationCreateOut(BaseModel):
+    business_id: str
+    email: EmailStr
+    message: str
 
 
 class MenuAssetOut(BaseModel):

@@ -49,6 +49,7 @@ from app.models import (
     BusinessStatus,
     DestinationType,
     DynamicLink,
+    InvitationToken,
     LegalAcceptance,
     LegalDocumentType,
     Membership,
@@ -57,12 +58,15 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    AdminInviteIn,
     AnalyticsSummaryOut,
     BusinessCreate,
     BusinessOut,
     BusinessPatch,
     ChangePasswordIn,
     DailyScanOut,
+    InvitationAcceptIn,
+    InvitationCreateOut,
     LegalAcceptIn,
     LegalDocumentStatusOut,
     LegalStatusOut,
@@ -88,8 +92,17 @@ from app.services.auth_service import (
 )
 from app.services.email_service import (
     EmailDeliveryError,
+    outbound_email_enabled,
     password_reset_delivery_enabled,
+    send_invitation_email,
     send_password_reset_email,
+)
+from app.services.invitation_service import (
+    InvitationError,
+    InvitationTokenError,
+    accept_invitation,
+    hash_invitation_token,
+    issue_invitation,
 )
 from app.services.legal_service import (
     accept_legal_documents,
@@ -278,6 +291,57 @@ def confirm_password_reset(
     )
     db.commit()
     return MessageOut(message="La contraseña fue actualizada.")
+
+
+@router.post("/auth/invitations/accept", response_model=MessageOut)
+def confirm_invitation(
+    payload: InvitationAcceptIn, db: Session = Depends(get_db)
+) -> MessageOut:
+    if not payload.accept_legal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Legal acceptance is required",
+        )
+    try:
+        result = accept_invitation(db, token=payload.token, new_password=payload.new_password)
+    except InvitationTokenError as exc:
+        invitation = db.scalar(
+            select(InvitationToken).where(
+                InvitationToken.token_hash == hash_invitation_token(payload.token)
+            )
+        )
+        if invitation is not None:
+            record_audit_event(
+                db,
+                event_type=(
+                    "invitation.expired" if exc.reason == "expired" else "invitation.rejected"
+                ),
+                actor_user_id=invitation.user_id,
+                business_id=invitation.business_id,
+                target_type="invitation",
+                target_id=invitation.id,
+                details={"reason": exc.reason},
+            )
+            db.commit()
+        detail = {
+            "expired": "Invitation expired",
+            "used": "Invitation already used",
+            "invalid": "Invalid invitation token",
+        }[exc.reason]
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from None
+    except AdminCreationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _record_legal_acceptance_events(db, result.user.id, result.acceptances)
+    record_audit_event(
+        db,
+        event_type="invitation.accepted",
+        actor_user_id=result.user.id,
+        business_id=result.business.id,
+        target_type="invitation",
+        target_id=result.user.id,
+    )
+    db.commit()
+    return MessageOut(message="Tu cuenta fue activada.")
 
 
 @router.get("/api/me", response_model=UserOut)
@@ -685,6 +749,61 @@ def admin_assign_owner(
     )
     db.commit()
     return owner
+
+
+@router.post("/admin/invitations", response_model=InvitationCreateOut, status_code=202)
+def admin_invite_client(
+    payload: AdminInviteIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InvitationCreateOut:
+    _enforce_legal_acceptance(db, user)
+    require_platform_admin(user)
+    if not outbound_email_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SMTP invitation delivery is not configured",
+        )
+    try:
+        result = issue_invitation(
+            db,
+            business_name=payload.business_name,
+            email=payload.email,
+        )
+        send_invitation_email(result.user.email, result.token)
+    except InvitationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except EmailDeliveryError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Invitation email delivery failed",
+        ) from exc
+    record_audit_event(
+        db,
+        event_type="invitation.created",
+        actor_user_id=user.id,
+        business_id=result.business.id,
+        target_type="invitation",
+        target_id=result.invitation.id,
+        details={"email": result.user.email},
+    )
+    record_audit_event(
+        db,
+        event_type="invitation.sent",
+        actor_user_id=user.id,
+        business_id=result.business.id,
+        target_type="invitation",
+        target_id=result.invitation.id,
+        details={"email": result.user.email},
+    )
+    db.commit()
+    return InvitationCreateOut(
+        business_id=result.business.id,
+        email=result.user.email,
+        message=f"Invitación enviada a {result.user.email}",
+    )
 
 
 def _check_login_rate(email: str, request: Request) -> None:

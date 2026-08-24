@@ -13,7 +13,7 @@ class EmailDeliveryError(RuntimeError):
     pass
 
 
-def password_reset_delivery_enabled() -> bool:
+def outbound_email_enabled() -> bool:
     settings = get_settings()
     return all(
         [
@@ -26,9 +26,18 @@ def password_reset_delivery_enabled() -> bool:
     )
 
 
+def password_reset_delivery_enabled() -> bool:
+    return outbound_email_enabled()
+
+
 def build_password_reset_url(token: str) -> str:
     base_url = get_settings().frontend_base_url.rstrip("/")
     return f"{base_url}/reset-password?{urlencode({'token': token})}"
+
+
+def build_invitation_url(token: str) -> str:
+    base_url = get_settings().frontend_base_url.rstrip("/")
+    return f"{base_url}/activate-account?{urlencode({'token': token})}"
 
 
 def build_password_reset_text_content(reset_url: str, expiry_minutes: int) -> str:
@@ -48,7 +57,67 @@ def build_password_reset_text_content(reset_url: str, expiry_minutes: int) -> st
 
 
 def build_password_reset_html_content(reset_url: str, expiry_minutes: int) -> str:
-    escaped_url = escape(reset_url, quote=True)
+    return build_branded_email_html(
+        title="Restablecé tu contraseña",
+        intro="Recibimos una solicitud para restablecer tu contraseña de Nambre.",
+        cta_label="Restablecer contraseña",
+        cta_url=reset_url,
+        primary_note=f"Este enlace vence en {expiry_minutes} minutos y solo puede usarse una vez.",
+        secondary_note="Si no solicitaste este cambio, podés ignorar este mensaje.",
+        fallback_label="Si el botón no funciona, copiá y pegá este enlace en tu navegador:",
+    )
+
+
+def build_invitation_text_content(invitation_url: str, expiry_hours: int) -> str:
+    return "\n".join(
+        [
+            "Hola,",
+            "",
+            "Tu acceso a Nambre está listo.",
+            "El equipo de Nambre habilitó tu acceso y ahora te toca definir tu propia contraseña.",
+            f"Usá este enlace para crearla: {invitation_url}",
+            f"El enlace vence en {expiry_hours} horas y solo puede usarse una vez.",
+            "",
+            (
+                "También necesitaremos que aceptes los documentos legales vigentes durante la "
+                "activación."
+            ),
+            "Si no esperabas este mensaje, podés ignorarlo.",
+            "",
+            "Equipo Nambre",
+        ]
+    )
+
+
+def build_invitation_html_content(invitation_url: str, expiry_hours: int) -> str:
+    return build_branded_email_html(
+        title="Tu acceso a Nambre está listo",
+        intro=(
+            "El equipo de Nambre habilitó tu acceso. Ahora te toca definir tu propia "
+            "contraseña para activar la cuenta."
+        ),
+        cta_label="Crear contraseña",
+        cta_url=invitation_url,
+        primary_note=f"Este enlace vence en {expiry_hours} horas y solo puede usarse una vez.",
+        secondary_note=(
+            "Durante la activación también te vamos a pedir que aceptes los documentos "
+            "legales vigentes de Nambre."
+        ),
+        fallback_label="Si el botón no funciona, copiá y pegá este enlace en tu navegador:",
+    )
+
+
+def build_branded_email_html(
+    *,
+    title: str,
+    intro: str,
+    cta_label: str,
+    cta_url: str,
+    primary_note: str,
+    secondary_note: str,
+    fallback_label: str,
+) -> str:
+    escaped_url = escape(cta_url, quote=True)
     body_style = (
         "margin:0; padding:0; background-color:#f3f7f6; "
         "font-family:Arial, Helvetica, sans-serif; color:#12312f;"
@@ -127,9 +196,9 @@ def build_password_reset_html_content(reset_url: str, expiry_minutes: int) -> st
                 >
                   <tr>
                     <td style="padding:40px 32px 24px 32px;">
-                      <h1 style="{title_style}">Restablecé tu contraseña</h1>
+                      <h1 style="{title_style}">{escape(title)}</h1>
                       <p style="{paragraph_style}">
-                        Recibimos una solicitud para restablecer tu contraseña de Nambre.
+                        {escape(intro)}
                       </p>
                       <table
                         role="presentation"
@@ -141,19 +210,19 @@ def build_password_reset_html_content(reset_url: str, expiry_minutes: int) -> st
                         <tr>
                           <td align="center" bgcolor="#0f766e" style="border-radius:999px;">
                             <a href="{escaped_url}" style="{cta_style}">
-                              Restablecer contraseña
+                              {escape(cta_label)}
                             </a>
                           </td>
                         </tr>
                       </table>
                       <p style="{secondary_text_style}">
-                        Este enlace vence en {expiry_minutes} minutos y solo puede usarse una vez.
+                        {escape(primary_note)}
                       </p>
                       <p style="{secondary_text_last_style}">
-                        Si no solicitaste este cambio, podés ignorar este mensaje.
+                        {escape(secondary_note)}
                       </p>
                       <p style="{fallback_label_style}">
-                        Si el botón no funciona, copiá y pegá este enlace en tu navegador:
+                        {escape(fallback_label)}
                       </p>
                       <p style="{fallback_url_style}">
                         <a
@@ -182,8 +251,47 @@ def build_password_reset_html_content(reset_url: str, expiry_minutes: int) -> st
 
 def send_password_reset_email(recipient_email: str, token: str) -> None:
     settings = get_settings()
-    if not password_reset_delivery_enabled():
+    if not outbound_email_enabled():
         raise EmailDeliveryError("SMTP password reset delivery is not configured")
+    reset_url = build_password_reset_url(token)
+    send_transactional_email(
+        recipient_email=recipient_email,
+        subject="Restablecé tu contraseña de Nambre",
+        plain_text=build_password_reset_text_content(
+            reset_url,
+            settings.password_reset_token_minutes,
+        ),
+        html=build_password_reset_html_content(reset_url, settings.password_reset_token_minutes),
+        failure_log="Password reset email delivery failed for %s",
+        failure_message="Password reset email delivery failed",
+    )
+
+
+def send_invitation_email(recipient_email: str, token: str) -> None:
+    settings = get_settings()
+    if not outbound_email_enabled():
+        raise EmailDeliveryError("SMTP invitation delivery is not configured")
+    invitation_url = build_invitation_url(token)
+    send_transactional_email(
+        recipient_email=recipient_email,
+        subject="Tu acceso a Nambre está listo",
+        plain_text=build_invitation_text_content(invitation_url, settings.invitation_token_hours),
+        html=build_invitation_html_content(invitation_url, settings.invitation_token_hours),
+        failure_log="Invitation email delivery failed for %s",
+        failure_message="Invitation email delivery failed",
+    )
+
+
+def send_transactional_email(
+    *,
+    recipient_email: str,
+    subject: str,
+    plain_text: str,
+    html: str,
+    failure_log: str,
+    failure_message: str,
+) -> None:
+    settings = get_settings()
     smtp_host = settings.smtp_host
     smtp_username = settings.smtp_username
     smtp_password = settings.smtp_password
@@ -194,11 +302,7 @@ def send_password_reset_email(recipient_email: str, token: str) -> None:
         or smtp_password is None
         or smtp_from_email is None
     ):
-        raise EmailDeliveryError("SMTP password reset delivery is not configured")
-
-    reset_url = build_password_reset_url(token)
-    subject = "Restablecé tu contraseña de Nambre"
-    expiry_minutes = settings.password_reset_token_minutes
+        raise EmailDeliveryError(failure_message)
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = (
@@ -207,11 +311,8 @@ def send_password_reset_email(recipient_email: str, token: str) -> None:
         else smtp_from_email
     )
     message["To"] = recipient_email
-    message.set_content(build_password_reset_text_content(reset_url, expiry_minutes))
-    message.add_alternative(
-        build_password_reset_html_content(reset_url, expiry_minutes),
-        subtype="html",
-    )
+    message.set_content(plain_text)
+    message.add_alternative(html, subtype="html")
 
     try:
         if settings.smtp_use_ssl:
@@ -234,5 +335,5 @@ def send_password_reset_email(recipient_email: str, token: str) -> None:
             smtp.login(smtp_username, smtp_password)
             smtp.send_message(message)
     except Exception as exc:  # pragma: no cover - exercised through caller behavior
-        logger.exception("Password reset email delivery failed for %s", recipient_email)
-        raise EmailDeliveryError("Password reset email delivery failed") from exc
+        logger.exception(failure_log, recipient_email)
+        raise EmailDeliveryError(failure_message) from exc

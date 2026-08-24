@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     login_rate_limit_per_minute: int = 5
     password_reset_rate_limit_per_hour: int = 3
     password_reset_token_minutes: int = 30
+    invitation_token_hours: int = 48
     frontend_base_url: str = "http://localhost:3000"
     smtp_host: str | None = None
     smtp_port: int = 587

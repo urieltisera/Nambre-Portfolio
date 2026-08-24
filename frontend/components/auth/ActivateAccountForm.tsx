@@ -10,15 +10,8 @@ import {Button} from "@/components/ui/Button";
 import {Card} from "@/components/ui/Card";
 import {Input} from "@/components/ui/Input";
 import {acceptInvitation, LegalDocumentType} from "@/lib/api";
-import {LEGAL_DOCUMENT_COPY} from "@/lib/legal-copy";
-
-const LEGAL_DOCUMENT_LABELS: Record<LegalDocumentType, string> = {
-  acceptable_use: "Uso aceptable",
-  ai_policy: "Politica de IA",
-  cookies_analytics: "Cookies y analitica",
-  privacy: "Privacidad",
-  terms: "Terminos",
-};
+import {LEGAL_DOCUMENT_LABELS} from "@/lib/legal-copy";
+import {LegalModal} from "@/components/legal/LegalModal";
 
 export function ActivateAccountForm({initialToken}: {initialToken: string}) {
   const router = useRouter();
@@ -28,7 +21,7 @@ export function ActivateAccountForm({initialToken}: {initialToken: string}) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [openDocument, setOpenDocument] = useState<keyof typeof LEGAL_DOCUMENT_COPY | null>(null);
+  const [openDocument, setOpenDocument] = useState<LegalDocumentType | null>(null);
 
   const missingToken = !initialToken.trim();
   const mismatch = useMemo(
@@ -166,40 +159,7 @@ export function ActivateAccountForm({initialToken}: {initialToken: string}) {
             Volver al login
           </Link>
         </form>
-        {openDocument ? (
-          <div className="legal-modal" role="presentation">
-            <button
-              aria-label="Cerrar modal legal"
-              className="legal-modal__backdrop"
-              onClick={() => setOpenDocument(null)}
-              type="button"
-            />
-            <Card
-              aria-labelledby="activation-legal-modal-title"
-              aria-modal="true"
-              className="legal-modal__card"
-              role="dialog"
-            >
-              <div className="legal-modal__header">
-                <div>
-                  <p className="legal-modal__eyebrow">Texto legal provisorio</p>
-                  <h2 id="activation-legal-modal-title">{LEGAL_DOCUMENT_COPY[openDocument].title}</h2>
-                </div>
-                <Button onClick={() => setOpenDocument(null)} size="sm" variant="ghost">
-                  Cerrar
-                </Button>
-              </div>
-              <p>{LEGAL_DOCUMENT_COPY[openDocument].body}</p>
-              <p className="login-legal__hint">
-                También aplican:{" "}
-                {(["acceptable_use", "cookies_analytics", "ai_policy"] as LegalDocumentType[])
-                  .map((documentType) => LEGAL_DOCUMENT_LABELS[documentType])
-                  .join(", ")}
-                .
-              </p>
-            </Card>
-          </div>
-        ) : null}
+        {openDocument ? <LegalModal documentType={openDocument} onClose={() => setOpenDocument(null)} /> : null}
       </Card>
     </main>
   );

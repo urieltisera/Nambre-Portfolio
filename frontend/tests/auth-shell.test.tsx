@@ -142,9 +142,9 @@ describe("LoginForm", () => {
     expect(screen.getByRole("button", {name: "Ingresar"}).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", {name: "Términos"}));
-    expect(screen.getByRole("dialog", {name: "Terminos y Condiciones"})).toBeTruthy();
+    expect(screen.getByRole("dialog", {name: "Términos y Condiciones"})).toBeTruthy();
     fireEvent.click(screen.getByRole("button", {name: "Cerrar"}));
-    expect(screen.queryByRole("dialog", {name: "Terminos y Condiciones"})).toBeNull();
+    expect(screen.queryByRole("dialog", {name: "Términos y Condiciones"})).toBeNull();
     expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("owner@example.com");
     expect((screen.getByLabelText("Contraseña") as HTMLInputElement).value).toBe("owner12345");
 

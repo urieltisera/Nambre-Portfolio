@@ -108,11 +108,23 @@ npm run build
 
 La documentación técnica de `Nambre Legal & Security Gate v1` quedó en `docs/legal-security-gate-v1.md`.
 
+El paquete legal operativo del piloto quedó publicado en:
+
+- `/terms`
+- `/privacy`
+- `/acceptable-use`
+- `/cookies-analytics`
+- `/ai-policy`
+
 ## Storage actual
 
 Fase 1 Base sigue usando `LocalStorage` en backend. En `compose.yaml`, el backend persiste archivos en el volumen Docker `backend_storage` montado en `/data/storage`, por lo que PDFs, logos y QR sobreviven a reinicios del contenedor.
 
 MinIO figura en Compose, pero hoy no está integrado en el backend. Se mantiene como deuda técnica explícita; no forma parte de este cierre de Fase 1.
+
+## Backups operativos
+
+La guía de backups quedó en `docs/backups.md`, con restauración segura en `docs/restore-production.md` y script base en `scripts/backup_production.sh`.
 
 ## Alcance excluido
 

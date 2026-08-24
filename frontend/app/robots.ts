@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
     host: siteUrl.toString(),
     rules: [
       {
-        allow: ["/", "/privacy", "/terms"],
+        allow: ["/", "/privacy", "/terms", "/acceptable-use", "/cookies-analytics", "/ai-policy"],
         disallow: ["/admin/", "/api/", "/auth/", "/docs", "/logos/", "/m/", "/openapi.json", "/r/"],
         userAgent: "*",
       },

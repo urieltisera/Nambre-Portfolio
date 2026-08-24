@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.security import SESSION_COOKIE_NAME, set_session_cookie
 from app.config import Settings
+from app.legal import CURRENT_LEGAL_VERSIONS
 from app.models import (
     AcceptanceMethod,
     AuditEvent,
@@ -79,7 +80,7 @@ def test_legal_acceptance_is_versioned_and_historical(client, db: Session) -> No
     allowed = client.get(f"/api/businesses/{business.id}", headers=headers)
     assert allowed.status_code == 200
 
-    original_version = "2026-08-21"
+    original_version = CURRENT_LEGAL_VERSIONS[LegalDocumentType.terms]
     bumped_version = "2026-09-01"
     from app.api import routes
 
@@ -904,14 +905,14 @@ def test_legal_acceptance_global_version_is_db_unique(client, db: Session) -> No
         user_id=user.id,
         business_id=None,
         document_type=LegalDocumentType.terms,
-        document_version="2026-08-21",
+        document_version=CURRENT_LEGAL_VERSIONS[LegalDocumentType.terms],
         acceptance_method=AcceptanceMethod.seeded,
     )
     second = LegalAcceptance(
         user_id=user.id,
         business_id=None,
         document_type=LegalDocumentType.terms,
-        document_version="2026-08-21",
+        document_version=CURRENT_LEGAL_VERSIONS[LegalDocumentType.terms],
         acceptance_method=AcceptanceMethod.ui_checkbox,
     )
     db.add(first)

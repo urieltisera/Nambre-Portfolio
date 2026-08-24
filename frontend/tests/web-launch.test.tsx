@@ -52,7 +52,7 @@ describe("web launch surfaces", () => {
     expect(result.sitemap).toBe("http://localhost:3000/sitemap.xml");
     expect(result.rules).toEqual([
       {
-        allow: ["/", "/privacy", "/terms"],
+        allow: ["/", "/privacy", "/terms", "/acceptable-use", "/cookies-analytics", "/ai-policy"],
         disallow: ["/admin/", "/api/", "/auth/", "/docs", "/logos/", "/m/", "/openapi.json", "/r/"],
         userAgent: "*",
       },
@@ -64,6 +64,9 @@ describe("web launch surfaces", () => {
       "http://localhost:3000/",
       "http://localhost:3000/privacy",
       "http://localhost:3000/terms",
+      "http://localhost:3000/acceptable-use",
+      "http://localhost:3000/cookies-analytics",
+      "http://localhost:3000/ai-policy",
     ]);
   });
 

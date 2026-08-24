@@ -64,6 +64,25 @@ class DigitalMenuStatus(StrEnum):
     published = "published"
 
 
+class HeadingFontKey(StrEnum):
+    editorial = "editorial"
+    modern = "modern"
+    classic = "classic"
+    rounded = "rounded"
+
+
+class BodyFontKey(StrEnum):
+    clean = "clean"
+    humanist = "humanist"
+    modern = "modern"
+
+
+class CardStyleKey(StrEnum):
+    square = "square"
+    soft = "soft"
+    rounded = "rounded"
+
+
 class DestinationType(StrEnum):
     menu_pdf = "menu_pdf"
     digital_menu = "digital_menu"
@@ -206,9 +225,36 @@ class DigitalMenu(Base):
         Enum(DigitalMenuStatus), default=DigitalMenuStatus.draft
     )
     template_key: Mapped[str] = mapped_column(String(64), default="modern")
+    accent_color: Mapped[str] = mapped_column(String(7), default="#955F32")
+    background_color: Mapped[str] = mapped_column(String(7), default="#F6F0E8")
+    surface_color: Mapped[str] = mapped_column(String(7), default="#FFF7EE")
+    text_color: Mapped[str] = mapped_column(String(7), default="#241711")
+    muted_text_color: Mapped[str] = mapped_column(String(7), default="#6F6258")
+    heading_font: Mapped[HeadingFontKey] = mapped_column(
+        Enum(HeadingFontKey), default=HeadingFontKey.editorial
+    )
+    body_font: Mapped[BodyFontKey] = mapped_column(
+        Enum(BodyFontKey), default=BodyFontKey.clean
+    )
+    card_style: Mapped[CardStyleKey] = mapped_column(
+        Enum(CardStyleKey), default=CardStyleKey.rounded
+    )
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    @property
+    def theme(self) -> dict[str, str | HeadingFontKey | BodyFontKey | CardStyleKey]:
+        return {
+            "accent_color": self.accent_color,
+            "background_color": self.background_color,
+            "surface_color": self.surface_color,
+            "text_color": self.text_color,
+            "muted_text_color": self.muted_text_color,
+            "heading_font": self.heading_font,
+            "body_font": self.body_font,
+            "card_style": self.card_style,
+        }
 
 
 class MenuCategory(Base):

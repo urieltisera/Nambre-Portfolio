@@ -6,6 +6,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {PublicDigitalMenuPage} from "@/lib/api";
 import {PublicMenuPage} from "@/components/public-menu/PublicMenuPage";
 import {PublicMenuState} from "@/components/public-menu/PublicMenuState";
+import {menuThemePresets, nambreDefaultThemeConfig} from "@/components/public-menu/theme";
 
 const scrollIntoView = vi.fn();
 
@@ -31,8 +32,10 @@ const publicMenuFixture: PublicDigitalMenuPage = {
     name: "Carta brunch",
     status: "published",
     template_key: "modern",
+    theme: {...nambreDefaultThemeConfig},
     updated_at: "2026-08-24T10:00:00Z",
   },
+  theme: {...nambreDefaultThemeConfig},
   categories: [
     {
       description: "Jugos y cafetería",
@@ -165,6 +168,25 @@ describe("PublicMenuPage", () => {
 
     fireEvent.click(screen.getByRole("button", {name: "Brunch"}));
     expect(scrollIntoView).toHaveBeenCalledWith({behavior: "smooth", block: "start"});
+  });
+
+  it("applies theme tokens and keeps dark presets readable with and without images", () => {
+    render(
+      <PublicMenuPage
+        data={{
+          ...publicMenuFixture,
+          menu: {...publicMenuFixture.menu, theme: menuThemePresets[2]!.theme},
+          theme: menuThemePresets[2]!.theme,
+        }}
+      />,
+    );
+
+    const shell = screen.getByRole("main");
+    expect(shell.getAttribute("style")).toContain("--public-menu-accent");
+    expect(shell.getAttribute("style")).toContain("--public-menu-background");
+    expect(screen.getByText("Cold brew")).toBeTruthy();
+    expect(screen.getByAltText("Tostada premium")).toBeTruthy();
+    expect(screen.getByText("Powered by Nambre")).toBeTruthy();
   });
 
   it("renders the safe unavailable state", () => {

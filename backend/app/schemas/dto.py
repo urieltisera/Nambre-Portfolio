@@ -5,16 +5,20 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 
 from app.models import (
     AcceptanceMethod,
+    BodyFontKey,
     BusinessPlanKey,
     BusinessStatus,
+    CardStyleKey,
     DestinationType,
     DigitalMenuStatus,
+    HeadingFontKey,
     LegalDocumentType,
     MembershipRole,
     MenuAssetStatus,
     QRStatus,
     QRType,
 )
+from app.services.digital_menu_theme_service import DEFAULT_MENU_THEME, HEX_COLOR_RE
 
 
 class TokenOut(BaseModel):
@@ -142,9 +146,48 @@ class MenuStateOut(BaseModel):
     public_code: str | None
 
 
+class DigitalMenuThemePatchIn(BaseModel):
+    accent_color: str | None = None
+    background_color: str | None = None
+    surface_color: str | None = None
+    text_color: str | None = None
+    muted_text_color: str | None = None
+    heading_font: HeadingFontKey | None = None
+    body_font: BodyFontKey | None = None
+    card_style: CardStyleKey | None = None
+
+    @field_validator(
+        "accent_color",
+        "background_color",
+        "surface_color",
+        "text_color",
+        "muted_text_color",
+    )
+    @classmethod
+    def validate_hex_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not HEX_COLOR_RE.fullmatch(normalized):
+            raise ValueError("Theme colors must use #RRGGBB format")
+        return normalized.upper()
+
+
+class DigitalMenuThemeOut(BaseModel):
+    accent_color: str
+    background_color: str
+    surface_color: str
+    text_color: str
+    muted_text_color: str
+    heading_font: HeadingFontKey
+    body_font: BodyFontKey
+    card_style: CardStyleKey
+
+
 class DigitalMenuCreateIn(BaseModel):
     name: str
     template_key: str = "modern"
+    theme: DigitalMenuThemePatchIn | None = None
     status: DigitalMenuStatus = DigitalMenuStatus.draft
     is_published: bool = False
 
@@ -168,6 +211,7 @@ class DigitalMenuCreateIn(BaseModel):
 class DigitalMenuPatchIn(BaseModel):
     name: str | None = None
     template_key: str | None = None
+    theme: DigitalMenuThemePatchIn | None = None
     status: DigitalMenuStatus | None = None
     is_published: bool | None = None
 
@@ -197,6 +241,9 @@ class DigitalMenuOut(BaseModel):
     name: str
     status: DigitalMenuStatus
     template_key: str
+    theme: DigitalMenuThemeOut = Field(
+        default_factory=lambda: DigitalMenuThemeOut(**DEFAULT_MENU_THEME)
+    )
     is_published: bool
     created_at: datetime
     updated_at: datetime
@@ -377,6 +424,9 @@ class PublicDigitalMenuOut(BaseModel):
     business_id: str
     name: str
     template_key: str
+    theme: DigitalMenuThemeOut = Field(
+        default_factory=lambda: DigitalMenuThemeOut(**DEFAULT_MENU_THEME)
+    )
     categories: list[PublicMenuCategoryOut]
 
 
@@ -415,6 +465,9 @@ class PublicMenuCategorySectionOut(BaseModel):
 class PublicDigitalMenuPageOut(BaseModel):
     business: PublicBusinessSummaryOut
     menu: DigitalMenuOut
+    theme: DigitalMenuThemeOut = Field(
+        default_factory=lambda: DigitalMenuThemeOut(**DEFAULT_MENU_THEME)
+    )
     categories: list[PublicMenuCategorySectionOut]
 
 

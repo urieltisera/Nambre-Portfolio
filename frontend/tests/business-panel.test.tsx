@@ -4,6 +4,7 @@ import React from "react";
 import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {BusinessPanel} from "../components/BusinessPanel";
+import {nambreDefaultThemeConfig} from "../components/public-menu/theme";
 import {AppearanceProvider} from "../components/ui/AppearanceProvider";
 import {appearancePreferences} from "../lib/appearance-preferences";
 import {ApiError, type Business, type DigitalMenu, type MenuCategory, type MenuItem, type MenuState} from "../lib/api";
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   listMenuCategories: vi.fn(),
   listMenuItems: vi.fn(),
   request: vi.fn(),
+  updateDigitalMenu: vi.fn(),
   updateMenuCategory: vi.fn(),
   updateBusinessDestination: vi.fn(
     async (
@@ -62,6 +64,7 @@ vi.mock("@/lib/api", async () => {
     listMenuCategories: mocks.listMenuCategories,
     listMenuItems: mocks.listMenuItems,
     request: mocks.request,
+    updateDigitalMenu: mocks.updateDigitalMenu,
     updateMenuCategory: mocks.updateMenuCategory,
     updateBusinessDestination: mocks.updateBusinessDestination,
     updateMenuItem: mocks.updateMenuItem,
@@ -84,6 +87,7 @@ afterEach(() => {
   mocks.listMenuCategories.mockReset();
   mocks.listMenuItems.mockReset();
   mocks.request.mockReset();
+  mocks.updateDigitalMenu.mockReset();
   mocks.updateMenuCategory.mockReset();
   mocks.updateBusinessDestination.mockClear();
   mocks.updateMenuItem.mockReset();
@@ -1430,6 +1434,189 @@ describe("BusinessPanel logo flow", () => {
     expect(createObjectURL).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalled();
   }, 15000);
+
+  it("opens Diseño, updates preview, saves the theme and restores defaults", async () => {
+    const business: Business = {
+      destination_type: "digital_menu",
+      external_url: null,
+      features: {digital_menu: true},
+      id: "biz-theme",
+      logo_url: "/logos/biz-theme",
+      name: "Theme Bistro",
+      plan_key: "premium",
+      slug: "theme-bistro",
+      status: "active",
+    };
+    let menu: DigitalMenu = {
+      business_id: business.id,
+      created_at: "2026-08-24T10:00:00Z",
+      id: "dm-theme",
+      is_published: true,
+      name: "Carta Theme",
+      status: "published",
+      template_key: "modern",
+      theme: {...nambreDefaultThemeConfig},
+      updated_at: "2026-08-24T10:00:00Z",
+    };
+    const categories: MenuCategory[] = [
+      {
+        created_at: "2026-08-24T10:00:00Z",
+        description: "Cocina de estación",
+        digital_menu_id: menu.id,
+        id: "cat-theme",
+        is_visible: true,
+        name: "Especiales",
+        position: 0,
+        updated_at: "2026-08-24T10:00:00Z",
+      },
+    ];
+    const items: MenuItem[] = [
+      {
+        category_id: "cat-theme",
+        created_at: "2026-08-24T10:00:00Z",
+        currency: "ARS",
+        description: "Con pesto y queso",
+        id: "item-theme",
+        image_url: null,
+        is_available: true,
+        is_featured: true,
+        is_visible: true,
+        name: "Tostón de la casa",
+        position: 0,
+        price: "9800.00",
+        updated_at: "2026-08-24T10:00:00Z",
+      },
+    ];
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-theme") return business;
+      if (path === "/api/businesses/biz-theme/menu") {
+        return {current: null, public_code: "theme-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-theme/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-theme/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-theme/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    mocks.fetchDigitalMenu.mockImplementation(async () => menu);
+    mocks.listMenuCategories.mockResolvedValue(categories);
+    mocks.listMenuItems.mockResolvedValue(items);
+    mocks.updateDigitalMenu.mockImplementation(async (_token, _businessId, _menuId, payload) => {
+      menu = {
+        ...menu,
+        theme: {
+          ...menu.theme,
+          ...payload.theme,
+        },
+      };
+      return menu;
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByText("Hola, Theme Bistro 👋");
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    fireEvent.click(await screen.findByRole("tab", {name: "Diseño"}));
+
+    expect(await screen.findByText("Nambre Natural")).toBeTruthy();
+    expect(screen.getByText("Vista previa")).toBeTruthy();
+
+    const preview = screen.getByTestId("digital-menu-theme-preview");
+    const accentInput = screen.getByLabelText("Color principal");
+    fireEvent.change(accentInput, {target: {value: "#1F3A2D"}});
+    expect(preview.getAttribute("style")).toContain("--public-menu-accent: #1F3A2D");
+
+    fireEvent.change(screen.getByLabelText("Fondo"), {target: {value: "#FAF7F2"}});
+    fireEvent.change(screen.getByLabelText("Texto principal"), {target: {value: "#17110E"}});
+    fireEvent.change(screen.getByLabelText("Texto secundario"), {target: {value: "#5C524A"}});
+    fireEvent.change(screen.getByLabelText("Tipografía de títulos"), {target: {value: "rounded"}});
+    fireEvent.change(screen.getByLabelText("Tipografía de cuerpo"), {target: {value: "modern"}});
+    fireEvent.change(screen.getByLabelText("Estilo de cards"), {target: {value: "square"}});
+    expect(preview.getAttribute("style")).toContain("--public-menu-radius: 8px");
+
+    fireEvent.click(screen.getByRole("button", {name: "Guardar diseño"}));
+    await waitFor(() => expect(mocks.updateDigitalMenu).toHaveBeenCalledTimes(1));
+    expect(mocks.updateDigitalMenu).toHaveBeenCalledWith(
+      "owner-token",
+      "biz-theme",
+      "dm-theme",
+      expect.objectContaining({
+        theme: expect.objectContaining({
+          accent_color: "#1F3A2D",
+          body_font: "modern",
+          card_style: "square",
+          heading_font: "rounded",
+        }),
+      }),
+    );
+    expect(await screen.findByText("Diseño guardado correctamente.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", {name: "Restaurar diseño Nambre"}));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(preview.getAttribute("style")).toContain(`--public-menu-accent: ${nambreDefaultThemeConfig.accent_color}`);
+  });
+
+  it("shows API errors while saving Diseño", async () => {
+    const business: Business = {
+      destination_type: "digital_menu",
+      external_url: null,
+      features: {digital_menu: true},
+      id: "biz-theme-error",
+      logo_url: null,
+      name: "Theme Error",
+      plan_key: "premium",
+      slug: "theme-error",
+      status: "active",
+    };
+    const menu: DigitalMenu = {
+      business_id: business.id,
+      created_at: "2026-08-24T10:00:00Z",
+      id: "dm-theme-error",
+      is_published: false,
+      name: "Carta Error",
+      status: "draft",
+      template_key: "modern",
+      theme: {...nambreDefaultThemeConfig},
+      updated_at: "2026-08-24T10:00:00Z",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-theme-error") return business;
+      if (path === "/api/businesses/biz-theme-error/menu") {
+        return {current: null, public_code: "theme-error-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-theme-error/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-theme-error/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-theme-error/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    mocks.fetchDigitalMenu.mockResolvedValue(menu);
+    mocks.listMenuCategories.mockResolvedValue([]);
+    mocks.listMenuItems.mockResolvedValue([]);
+    mocks.updateDigitalMenu.mockRejectedValue(new ApiError(422, "text_color contrast is too low"));
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByText("Hola, Theme Error 👋");
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    fireEvent.click(await screen.findByRole("tab", {name: "Diseño"}));
+    fireEvent.change(screen.getByLabelText("Color principal"), {target: {value: "#1A332B"}});
+    fireEvent.click(screen.getByRole("button", {name: "Guardar diseño"}));
+
+    expect(
+      within(await screen.findByRole("alert")).getByText(
+        "Esta combinación reduce demasiado la legibilidad. Ajustá fondo, superficie o texto.",
+      ),
+    ).toBeTruthy();
+  });
 
   it("shows Carta Nambre locked for Essential and does not call digital menu APIs", async () => {
     const business: Business = {

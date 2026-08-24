@@ -1,21 +1,8 @@
 import type {Metadata} from "next";
-import {Cormorant_Garamond, Manrope} from "next/font/google";
 import {absoluteUrl} from "@/lib/site";
 import type {PublicDigitalMenuPage} from "@/lib/api";
 import {PublicMenuPage} from "@/components/public-menu/PublicMenuPage";
 import {PublicMenuState} from "@/components/public-menu/PublicMenuState";
-
-const headingFont = Cormorant_Garamond({
-  subsets: ["latin"],
-  variable: "--font-public-heading",
-  weight: ["500", "600", "700"],
-});
-
-const bodyFont = Manrope({
-  subsets: ["latin"],
-  variable: "--font-public-body",
-  weight: ["400", "500", "600", "700"],
-});
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,7 +54,7 @@ export default async function PublicMenuRoute({
 
   if (status === 404) {
     return (
-      <div className={`${headingFont.variable} ${bodyFont.variable}`}>
+      <div>
         <PublicMenuState
           description="No encontramos una carta pública para este enlace."
           title="Carta no encontrada"
@@ -78,7 +65,7 @@ export default async function PublicMenuRoute({
 
   if (data === null) {
     return (
-      <div className={`${headingFont.variable} ${bodyFont.variable}`}>
+      <div>
         <PublicMenuState
           description="Este menú no se encuentra disponible actualmente."
           title="Carta no disponible"
@@ -88,7 +75,7 @@ export default async function PublicMenuRoute({
   }
 
   return (
-    <div className={`${headingFont.variable} ${bodyFont.variable}`}>
+    <div>
       <PublicMenuPage data={data} />
     </div>
   );

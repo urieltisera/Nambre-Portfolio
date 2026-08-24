@@ -1,11 +1,52 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Cormorant_Garamond, DM_Sans, Fraunces, Inter, Lora, Manrope, Nunito } from "next/font/google";
 import { absoluteUrl, getSiteUrl } from "@/lib/site";
 
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
+});
+
+const menuHeadingEditorial = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-menu-heading-editorial",
+  weight: ["500", "600", "700"],
+});
+
+const menuHeadingModern = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-menu-heading-modern",
+  weight: ["500", "600", "700"],
+});
+
+const menuHeadingClassic = Lora({
+  subsets: ["latin"],
+  variable: "--font-menu-heading-classic",
+  weight: ["500", "600", "700"],
+});
+
+const menuHeadingRounded = Nunito({
+  subsets: ["latin"],
+  variable: "--font-menu-heading-rounded",
+  weight: ["600", "700", "800"],
+});
+
+const menuBodyClean = Manrope({
+  subsets: ["latin"],
+  variable: "--font-menu-body-clean",
+  weight: ["400", "500", "600", "700"],
+});
+
+const menuBodyHumanist = Inter({
+  subsets: ["latin"],
+  variable: "--font-menu-body-humanist",
+});
+
+const menuBodyModern = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-menu-body-modern",
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
@@ -64,7 +105,20 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body className={inter.variable}>{children}</body>
+      <body
+        className={[
+          inter.variable,
+          menuHeadingEditorial.variable,
+          menuHeadingModern.variable,
+          menuHeadingClassic.variable,
+          menuHeadingRounded.variable,
+          menuBodyClean.variable,
+          menuBodyHumanist.variable,
+          menuBodyModern.variable,
+        ].join(" ")}
+      >
+        {children}
+      </body>
     </html>
   );
 }

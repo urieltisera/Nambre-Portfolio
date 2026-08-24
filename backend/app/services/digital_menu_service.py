@@ -28,6 +28,11 @@ from app.repositories.digital_menu_repository import (
     list_public_categories,
     list_public_items_by_category,
 )
+from app.services.digital_menu_theme_service import (
+    DEFAULT_MENU_THEME,
+    theme_payload_from_menu,
+    validate_theme_readability,
+)
 from app.services.menu_item_image_service import build_menu_item_image_url
 from app.services.menu_service import (
     ensure_dynamic_link,
@@ -52,6 +57,7 @@ def create_business_digital_menu(
     *,
     name: str,
     template_key: str,
+    theme: dict[str, object] | None,
     status_value: DigitalMenuStatus,
     is_published: bool,
 ) -> DigitalMenu:
@@ -68,6 +74,7 @@ def create_business_digital_menu(
         status=status_value,
         is_published=is_published,
     )
+    _apply_theme_updates(menu, theme, replacing=True)
     create_digital_menu(db, menu)
     if business.destination_type == DestinationType.digital_menu:
         set_digital_menu_as_business_destination(db, business, menu)
@@ -81,6 +88,7 @@ def update_business_digital_menu(
     *,
     name: str | None = None,
     template_key: str | None = None,
+    theme: dict[str, object] | None = None,
     status_value: DigitalMenuStatus | None = None,
     is_published: bool | None = None,
 ) -> DigitalMenu:
@@ -88,6 +96,7 @@ def update_business_digital_menu(
         menu.name = name
     if template_key is not None:
         menu.template_key = template_key
+    _apply_theme_updates(menu, theme, replacing=False)
     publication_status, publication_flag = _resolve_publication_fields(
         menu.status,
         menu.is_published,
@@ -101,6 +110,38 @@ def update_business_digital_menu(
         set_digital_menu_as_business_destination(db, business, menu)
     db.flush()
     return menu
+
+
+def _apply_theme_updates(
+    menu: DigitalMenu,
+    theme: dict[str, object] | None,
+    *,
+    replacing: bool,
+) -> None:
+    if theme is None and not replacing:
+        return
+    current_theme = (
+        theme_payload_from_menu(menu)
+        if not replacing
+        else dict(DEFAULT_MENU_THEME)
+    )
+    merged_theme = dict(current_theme)
+    if theme is not None:
+        merged_theme.update(theme)
+    validate_theme_readability(
+        background_color=str(merged_theme["background_color"]),
+        surface_color=str(merged_theme["surface_color"]),
+        text_color=str(merged_theme["text_color"]),
+        muted_text_color=str(merged_theme["muted_text_color"]),
+    )
+    menu.accent_color = str(merged_theme["accent_color"])
+    menu.background_color = str(merged_theme["background_color"])
+    menu.surface_color = str(merged_theme["surface_color"])
+    menu.text_color = str(merged_theme["text_color"])
+    menu.muted_text_color = str(merged_theme["muted_text_color"])
+    menu.heading_font = merged_theme["heading_font"]
+    menu.body_font = merged_theme["body_font"]
+    menu.card_style = merged_theme["card_style"]
 
 
 def list_menu_categories(db: Session, business_id: str, menu_id: str) -> list[MenuCategory]:

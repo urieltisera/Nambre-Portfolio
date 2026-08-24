@@ -2,6 +2,7 @@
 
 import React, {useEffect, useMemo, useState} from "react";
 import {Eye, EyeOff, Pencil, Plus, Sparkles, Trash2} from "lucide-react";
+import {DigitalMenuDesignEditor} from "@/components/digital-menu/DigitalMenuDesignEditor";
 import {Alert} from "@/components/ui/Alert";
 import {Badge} from "@/components/ui/Badge";
 import {Button} from "@/components/ui/Button";
@@ -13,17 +14,20 @@ import {
   createDigitalMenu,
   createMenuCategory,
   createMenuItem,
-  deleteMenuItemImage,
   deleteMenuCategory,
   deleteMenuItem,
+  deleteMenuItemImage,
   DigitalMenu,
   digitalMenuErrorMessage,
+  DigitalMenuThemePayload,
+  digitalMenuThemeErrorMessage,
   fetchDigitalMenu,
   listMenuCategories,
   listMenuItems,
   MenuCategory,
   MenuItem,
   productImageErrorMessage,
+  updateDigitalMenu,
   updateMenuCategory,
   updateMenuItem,
   uploadMenuItemImage,
@@ -66,6 +70,7 @@ export function DigitalMenuEditor({
   const [busy, setBusy] = useState(false);
   const [categoryEditor, setCategoryEditor] = useState<CategoryEditorState>(null);
   const [itemEditor, setItemEditor] = useState<ItemEditorState>(null);
+  const [activeView, setActiveView] = useState<"content" | "design">("content");
 
   const itemsByCategory = useMemo(() => {
     const grouped = new Map<string, MenuItem[]>();
@@ -122,6 +127,22 @@ export function DigitalMenuEditor({
       await onBusinessRefresh();
     } catch (createError: unknown) {
       setError(digitalMenuErrorMessage(createError, "No pudimos crear tu Carta Nambre."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleThemeSave(theme: DigitalMenuThemePayload) {
+    if (!menu) return;
+    setBusy(true);
+    setFeedback("");
+    setError("");
+    try {
+      const updated = await updateDigitalMenu(token, business.id, menu.id, {theme});
+      setMenu(updated);
+      setFeedback("Diseño guardado correctamente.");
+    } catch (saveError: unknown) {
+      setError(digitalMenuThemeErrorMessage(saveError));
     } finally {
       setBusy(false);
     }
@@ -198,11 +219,17 @@ export function DigitalMenuEditor({
           categoryItems.length > 0
             ? Math.max(...categoryItems.map((item) => item.position)) + 1
             : 0;
-        const createdItem = await createMenuItem(token, business.id, menu.id, itemEditor?.categoryId ?? "", {
-          ...itemPayload,
-          currency: "ARS",
-          position: nextPosition,
-        });
+        const createdItem = await createMenuItem(
+          token,
+          business.id,
+          menu.id,
+          itemEditor?.categoryId ?? "",
+          {
+            ...itemPayload,
+            currency: "ARS",
+            position: nextPosition,
+          },
+        );
         if (values.imageFile) {
           try {
             await uploadMenuItemImage(token, business.id, menu.id, createdItem.id, values.imageFile);
@@ -351,9 +378,28 @@ export function DigitalMenuEditor({
               Administrá contenido y estados desde el dashboard. Nambre se ocupa del layout.
             </p>
           </div>
-          <Button disabled variant="secondary">
-            Vista previa próximamente
-          </Button>
+          <div aria-label="Secciones de Carta Nambre" className="digital-menu-view-switch" role="tablist">
+            <button
+              aria-selected={activeView === "content"}
+              className="digital-menu-view-switch__tab"
+              data-active={activeView === "content"}
+              onClick={() => setActiveView("content")}
+              role="tab"
+              type="button"
+            >
+              Carta
+            </button>
+            <button
+              aria-selected={activeView === "design"}
+              className="digital-menu-view-switch__tab"
+              data-active={activeView === "design"}
+              onClick={() => setActiveView("design")}
+              role="tab"
+              type="button"
+            >
+              Diseño
+            </button>
+          </div>
         </div>
         {selectedMode !== "digital_menu" ? (
           <Alert tone="info">
@@ -374,6 +420,23 @@ export function DigitalMenuEditor({
           description="Administrá categorías, productos y precios directamente desde Nambre."
           title="Creá tu Carta Nambre"
         />
+      ) : activeView === "design" ? (
+        <Card className="panel-stack">
+          <DigitalMenuDesignEditor
+            blockingMessage={
+              business.logo_url
+                ? null
+                : "Si tu negocio todavía no tiene logo, la carta seguirá mostrando el nombre como fallback."
+            }
+            business={business}
+            busy={busy}
+            canMutate={canMutate}
+            categories={categories}
+            items={items}
+            menu={menu}
+            onSave={handleThemeSave}
+          />
+        </Card>
       ) : (
         <>
           {categoryEditor ? (

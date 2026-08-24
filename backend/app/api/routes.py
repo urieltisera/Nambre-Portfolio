@@ -587,6 +587,7 @@ def create_digital_menu(
         business,
         name=payload.name,
         template_key=payload.template_key,
+        theme=payload.theme.model_dump(exclude_none=True) if payload.theme is not None else None,
         status_value=payload.status,
         is_published=payload.is_published,
     )
@@ -623,6 +624,7 @@ def patch_digital_menu(
         menu,
         name=data.get("name"),
         template_key=data.get("template_key"),
+        theme=data.get("theme"),
         status_value=data.get("status"),
         is_published=data.get("is_published"),
     )
@@ -1153,6 +1155,7 @@ def public_digital_menu(
         business_id=menu.business_id,
         name=menu.name,
         template_key=menu.template_key,
+        theme=menu.theme,
         categories=categories,
     )
 
@@ -1192,6 +1195,7 @@ def public_digital_menu_page_data(
             "name": business.name,
         },
         menu=menu,
+        theme=menu.theme,
         categories=categories,
     )
 

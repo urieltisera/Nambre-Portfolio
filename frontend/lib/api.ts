@@ -1,3 +1,5 @@
+import type {MenuBodyFontKey, MenuCardStyleKey, MenuHeadingFontKey, MenuThemeConfig} from "@/components/public-menu/theme";
+
 export type BusinessPlanKey = "essential" | "premium";
 
 export type BusinessFeatures = {
@@ -45,6 +47,7 @@ export type DigitalMenu = {
   name: string;
   status: "draft" | "published";
   template_key: string;
+  theme?: MenuThemeConfig;
   is_published: boolean;
   created_at: string;
   updated_at: string;
@@ -82,7 +85,19 @@ export type PublicMenuCategorySection = {
 export type PublicDigitalMenuPage = {
   business: PublicBusinessSummary;
   menu: DigitalMenu;
+  theme?: MenuThemeConfig;
   categories: PublicMenuCategorySection[];
+};
+
+export type DigitalMenuThemePayload = {
+  accent_color?: string;
+  background_color?: string;
+  surface_color?: string;
+  text_color?: string;
+  muted_text_color?: string;
+  heading_font?: MenuHeadingFontKey;
+  body_font?: MenuBodyFontKey;
+  card_style?: MenuCardStyleKey;
 };
 
 export type MenuCategory = {
@@ -115,6 +130,7 @@ export type MenuItem = {
 export type CreateDigitalMenuPayload = {
   name: string;
   template_key?: string;
+  theme?: DigitalMenuThemePayload;
   status?: "draft" | "published";
   is_published?: boolean;
 };
@@ -797,6 +813,23 @@ export function productImageErrorMessage(error: unknown): string {
     }
   }
   return "No pudimos subir la foto. Intentá nuevamente.";
+}
+
+export function digitalMenuThemeErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return "Tu plan actual no permite personalizar el diseño de la carta.";
+    }
+    if (typeof error.detail === "string") {
+      if (error.detail.includes("contrast is too low")) {
+        return "Esta combinación reduce demasiado la legibilidad. Ajustá fondo, superficie o texto.";
+      }
+      if (error.detail.includes("Theme colors must use #RRGGBB format")) {
+        return "Usá colores hexadecimales válidos, por ejemplo #1F3A2D.";
+      }
+    }
+  }
+  return "No pudimos guardar el diseño. Intentá nuevamente.";
 }
 
 export function createBusinessErrorMessage(error: unknown): string {

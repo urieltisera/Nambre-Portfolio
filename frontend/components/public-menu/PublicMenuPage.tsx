@@ -8,7 +8,7 @@ import {MenuItemCard} from "./MenuItemCard";
 import {PublicMenuActionBar} from "./PublicMenuActionBar";
 import {PublicMenuFooter} from "./PublicMenuFooter";
 import {PublicMenuHeader} from "./PublicMenuHeader";
-import {nambreDefaultTheme, type PublicMenuTheme} from "./theme";
+import {resolvePublicMenuTheme, type PublicMenuTheme} from "./theme";
 
 type FeaturedEntry = {
   categoryId: string;
@@ -27,11 +27,17 @@ function normalizeCategories(categories: PublicMenuCategorySection[]): PublicMen
 
 export function PublicMenuPage({
   data,
-  theme = nambreDefaultTheme,
+  previewMode = false,
+  theme,
 }: {
   data: PublicDigitalMenuPage;
+  previewMode?: boolean;
   theme?: PublicMenuTheme;
 }) {
+  const resolvedTheme = useMemo(
+    () => theme ?? resolvePublicMenuTheme(data.theme ?? data.menu.theme),
+    [data.menu.theme, data.theme, theme],
+  );
   const categories = useMemo(() => normalizeCategories(data.categories), [data.categories]);
   const featuredItems = useMemo<FeaturedEntry[]>(
     () =>
@@ -86,18 +92,23 @@ export function PublicMenuPage({
 
   return (
     <main
-      className="public-menu-shell"
+      className={`public-menu-shell${previewMode ? " public-menu-shell--preview" : ""}`}
+      data-testid={previewMode ? "digital-menu-theme-preview" : undefined}
       style={
         {
-          "--public-menu-accent": theme.accent,
-          "--public-menu-background": theme.background,
-          "--public-menu-body-font": theme.bodyFont,
-          "--public-menu-heading-font": theme.headingFont,
-          "--public-menu-muted": theme.mutedText,
-          "--public-menu-radius": theme.borderRadius,
-          "--public-menu-surface": theme.surface,
-          "--public-menu-surface-alt": theme.surfaceAlt,
-          "--public-menu-text": theme.text,
+          "--public-menu-accent": resolvedTheme.accent,
+          "--public-menu-accent-contrast": resolvedTheme.accentContrast,
+          "--public-menu-background": resolvedTheme.background,
+          "--public-menu-body-font": resolvedTheme.bodyFont,
+          "--public-menu-border": resolvedTheme.borderColor,
+          "--public-menu-heading-font": resolvedTheme.headingFont,
+          "--public-menu-muted": resolvedTheme.mutedText,
+          "--public-menu-nav": resolvedTheme.navBackground,
+          "--public-menu-radius": resolvedTheme.borderRadius,
+          "--public-menu-shadow": resolvedTheme.shadowColor,
+          "--public-menu-surface": resolvedTheme.surface,
+          "--public-menu-surface-alt": resolvedTheme.surfaceAlt,
+          "--public-menu-text": resolvedTheme.text,
         } as React.CSSProperties
       }
     >
@@ -135,7 +146,7 @@ export function PublicMenuPage({
 
         <PublicMenuFooter />
       </div>
-      <PublicMenuActionBar />
+      {!previewMode ? <PublicMenuActionBar /> : null}
     </main>
   );
 }

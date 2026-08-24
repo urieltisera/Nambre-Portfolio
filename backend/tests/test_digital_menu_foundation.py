@@ -17,6 +17,17 @@ from app.models import (
 from app.storage.local import LocalStorage
 from tests.conftest import add_membership, auth_headers, make_business, make_user
 
+DEFAULT_THEME = {
+    "accent_color": "#955F32",
+    "background_color": "#F6F0E8",
+    "surface_color": "#FFF7EE",
+    "text_color": "#241711",
+    "muted_text_color": "#6F6258",
+    "heading_font": "editorial",
+    "body_font": "clean",
+    "card_style": "rounded",
+}
+
 
 def _create_menu_with_category(
     client, business_id: str, headers: dict[str, str]
@@ -125,6 +136,194 @@ def test_owner_can_create_and_read_digital_menu(client, db: Session) -> None:
         headers=auth_headers(owner),
     )
     assert missing.status_code == 405
+
+
+def test_digital_menu_theme_defaults_read_update_and_isolation(client, db: Session) -> None:
+    owner = make_user(db, "theme-owner@example.com")
+    outsider = make_user(db, "theme-outsider@example.com")
+    business = make_business(
+        db, "Theme Biz", "theme-biz", plan_key=BusinessPlanKey.premium
+    )
+    outsider_business = make_business(
+        db, "Theme Other", "theme-other", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    add_membership(db, outsider, outsider_business, MembershipRole.owner)
+
+    created = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+        json={"name": "Carta visual"},
+    )
+    assert created.status_code == 200
+    assert created.json()["theme"] == DEFAULT_THEME
+
+    fetched = client.get(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["theme"] == DEFAULT_THEME
+
+    updated = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{created.json()['id']}",
+        headers=auth_headers(owner),
+        json={
+            "theme": {
+                "accent_color": "#1F3A2D",
+                "background_color": "#FAF7F2",
+                "surface_color": "#FFFDF9",
+                "text_color": "#17110E",
+                "muted_text_color": "#5C524A",
+                "heading_font": "rounded",
+                "body_font": "modern",
+                "card_style": "square",
+            }
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["theme"] == {
+        "accent_color": "#1F3A2D",
+        "background_color": "#FAF7F2",
+        "surface_color": "#FFFDF9",
+        "text_color": "#17110E",
+        "muted_text_color": "#5C524A",
+        "heading_font": "rounded",
+        "body_font": "modern",
+        "card_style": "square",
+    }
+
+    forbidden = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{created.json()['id']}",
+        headers=auth_headers(outsider),
+        json={"theme": {"accent_color": "#000000"}},
+    )
+    assert forbidden.status_code == 403
+
+
+def test_essential_business_cannot_read_or_update_digital_menu_theme(client, db: Session) -> None:
+    owner = make_user(db, "theme-essential@example.com")
+    business = make_business(
+        db, "Theme Essential", "theme-essential", plan_key=BusinessPlanKey.essential
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    fetched = client.get(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+    )
+    assert fetched.status_code == 403
+
+    created = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+        json={"name": "Carta bloqueada"},
+    )
+    assert created.status_code == 403
+
+
+def test_digital_menu_theme_validation_rejects_invalid_values(client, db: Session) -> None:
+    owner = make_user(db, "theme-validation@example.com")
+    business = make_business(
+        db, "Theme Validation", "theme-validation", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    created = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+        json={"name": "Carta validacion"},
+    )
+    assert created.status_code == 200
+
+    invalid_color = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{created.json()['id']}",
+        headers=auth_headers(owner),
+        json={"theme": {"accent_color": "rgb(1,2,3)"}},
+    )
+    assert invalid_color.status_code == 422
+
+    invalid_font = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{created.json()['id']}",
+        headers=auth_headers(owner),
+        json={"theme": {"heading_font": "wild"}},
+    )
+    assert invalid_font.status_code == 422
+
+    invalid_card = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{created.json()['id']}",
+        headers=auth_headers(owner),
+        json={"theme": {"card_style": "pill"}},
+    )
+    assert invalid_card.status_code == 422
+
+    low_contrast = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{created.json()['id']}",
+        headers=auth_headers(owner),
+        json={
+            "theme": {
+                "background_color": "#F6F0E8",
+                "surface_color": "#FFF7EE",
+                "text_color": "#F6F0E8",
+            }
+        },
+    )
+    assert low_contrast.status_code == 422
+
+
+def test_public_digital_menu_api_returns_theme_without_private_fields(client, db: Session) -> None:
+    owner = make_user(db, "theme-public@example.com")
+    business = make_business(
+        db, "Theme Public", "theme-public", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    created = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=auth_headers(owner),
+        json={
+            "name": "Carta pública",
+            "status": "published",
+            "is_published": True,
+            "theme": {
+                "accent_color": "#222222",
+                "background_color": "#15171B",
+                "surface_color": "#242930",
+                "text_color": "#F4EFE8",
+                "muted_text_color": "#C2B9AD",
+                "heading_font": "modern",
+                "body_font": "modern",
+                "card_style": "soft",
+            },
+        },
+    )
+    assert created.status_code == 200
+
+    switched = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    response = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["theme"] == {
+        "accent_color": "#222222",
+        "background_color": "#15171B",
+        "surface_color": "#242930",
+        "text_color": "#F4EFE8",
+        "muted_text_color": "#C2B9AD",
+        "heading_font": "modern",
+        "body_font": "modern",
+        "card_style": "soft",
+    }
+    assert "updated_at" not in payload["theme"]
+    assert "created_at" not in payload["theme"]
 
 
 def test_category_crud_order_visibility_and_isolation(client, db: Session) -> None:

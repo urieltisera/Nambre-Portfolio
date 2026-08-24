@@ -512,7 +512,8 @@ def test_public_redirect_rejects_unsupported_dangerous_destination(client, db: S
     db.commit()
 
     response = client.get("/r/danger-code")
-    assert response.status_code == 404
+    assert response.status_code == 403
+    assert response.text == "Este menú no se encuentra disponible actualmente."
 
 
 def test_public_redirect_does_not_expose_internal_destination_id(client, db: Session) -> None:
@@ -533,6 +534,31 @@ def test_public_redirect_does_not_expose_internal_destination_id(client, db: Ses
     assert response.status_code == 302
     assert response.headers["location"] == f"/m/{public_code}/menu.pdf"
     assert destination_id not in response.headers["location"]
+
+
+def test_public_redirect_ignores_open_redirect_query_parameters(client, db: Session) -> None:
+    owner = make_user(db, "public-open-redirect@example.com")
+    business = make_business(db, "Open Redirect Biz", "open-redirect-biz", BusinessStatus.active)
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    updated = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=auth_headers(owner),
+        json={
+            "destination_type": "external_url",
+            "external_url": "https://carta.ejemplo.com/segura",
+        },
+    )
+    assert updated.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    response = client.get(
+        f"/r/{link.public_code}?next=https://malicioso.example/phish&url=https://otro.example"
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://carta.ejemplo.com/segura"
 
 
 def test_menu_upload_rejects_empty_pdf(client, db: Session) -> None:

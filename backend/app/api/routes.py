@@ -1159,54 +1159,14 @@ def analytics_scans(
 def public_redirect(
     public_code: str, user_agent: str | None = Header(default=None), db: Session = Depends(get_db)
 ) -> RedirectResponse | PlainTextResponse:
-    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
-    if link is None:
-        raise HTTPException(status_code=404, detail="Not found")
-    business = db.get(Business, link.business_id)
-    if (
-        business is None
-        or not link.is_active
-        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
-    ):
-        return PlainTextResponse(
-            "Este menú no se encuentra disponible actualmente.", status_code=403
-        )
+    resolved = _resolve_public_redirect_target(db, public_code)
+    if isinstance(resolved, PlainTextResponse):
+        return resolved
+    link, redirect_url = resolved
     record_scan(db, link.id, link.business_id, user_agent)
-    if business.destination_type == DestinationType.external_url:
-        if not business.external_url:
-            db.commit()
-            raise HTTPException(status_code=404, detail="Not found")
-        parsed = urlparse(business.external_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            db.commit()
-            raise HTTPException(status_code=404, detail="Not found")
-        db.commit()
-        return RedirectResponse(
-            url=business.external_url,
-            status_code=302,
-            headers=_dynamic_public_cache_headers(),
-        )
-    if business.destination_type == DestinationType.digital_menu:
-        if not business_has_feature(business, BusinessFeatureKey.digital_menu):
-            db.commit()
-            return PlainTextResponse(
-                "Este menú no se encuentra disponible actualmente.", status_code=403
-            )
-        if link.destination_id == "":
-            db.commit()
-            raise HTTPException(status_code=404, detail="Not found")
-        db.commit()
-        return RedirectResponse(
-            url=_public_menu_page_url(public_code),
-            status_code=302,
-            headers=_dynamic_public_cache_headers(),
-        )
-    if link.destination_id == "":
-        db.commit()
-        raise HTTPException(status_code=404, detail="Not found")
     db.commit()
     return RedirectResponse(
-        url=_public_menu_url(public_code),
+        url=redirect_url,
         status_code=302,
         headers=_dynamic_public_cache_headers(),
     )
@@ -1216,23 +1176,10 @@ def public_redirect(
 def public_digital_menu(
     public_code: str, db: Session = Depends(get_db)
 ) -> PublicDigitalMenuOut | PlainTextResponse:
-    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
-    if link is None:
-        raise HTTPException(status_code=404, detail="Not found")
-    business = db.get(Business, link.business_id)
-    if (
-        business is None
-        or not link.is_active
-        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
-    ):
-        return PlainTextResponse(
-            "Este menú no se encuentra disponible actualmente.", status_code=403
-        )
-    if not business_has_feature(business, BusinessFeatureKey.digital_menu):
-        return PlainTextResponse(
-            "Este menú no se encuentra disponible actualmente.", status_code=403
-        )
-    _, _, snapshot_payload = get_public_digital_menu_payload(db, public_code)
+    payload_result = _get_public_digital_menu_payload_or_response(db, public_code)
+    if isinstance(payload_result, PlainTextResponse):
+        return payload_result
+    _, _, snapshot_payload = payload_result
     payload = public_menu_response_from_snapshot(snapshot_payload, public_code)
     menu = payload["menu"]
     return PublicDigitalMenuOut(
@@ -1249,30 +1196,10 @@ def public_digital_menu(
 def public_digital_menu_page_data(
     public_code: str, db: Session = Depends(get_db)
 ) -> PublicDigitalMenuPageOut | PlainTextResponse:
-    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
-    if link is None:
-        raise HTTPException(status_code=404, detail="Not found")
-    business = db.get(Business, link.business_id)
-    if (
-        business is None
-        or not link.is_active
-        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
-    ):
-        return PlainTextResponse(
-            "Este menú no se encuentra disponible actualmente.", status_code=403
-        )
-    if not business_has_feature(business, BusinessFeatureKey.digital_menu):
-        return PlainTextResponse(
-            "Este menú no se encuentra disponible actualmente.", status_code=403
-        )
-    try:
-        business, _, snapshot_payload = get_public_digital_menu_page_payload(db, public_code)
-    except HTTPException as exc:
-        if exc.status_code == 404:
-            return PlainTextResponse(
-                "Este menú no se encuentra disponible actualmente.", status_code=403
-            )
-        raise
+    payload_result = _get_public_digital_menu_page_payload_or_response(db, public_code)
+    if isinstance(payload_result, PlainTextResponse):
+        return payload_result
+    business, _, snapshot_payload = payload_result
     payload = public_menu_response_from_snapshot(snapshot_payload, public_code)
     return PublicDigitalMenuPageOut(
         business=payload["business"],
@@ -1313,25 +1240,10 @@ def public_menu_file(
     public_code: str, v: str | None = None, db: Session = Depends(get_db)
 ) -> FileResponse | PlainTextResponse:
     del v
-    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
-    if link is None:
-        raise HTTPException(status_code=404, detail="Not found")
-    business = db.get(Business, link.business_id)
-    if (
-        business is None
-        or not link.is_active
-        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
-    ):
-        return PlainTextResponse(
-            "Este menú no se encuentra disponible actualmente.", status_code=403
-        )
-    asset = db.get(MenuAsset, link.destination_id)
-    if asset is None:
-        raise HTTPException(status_code=404, detail="Not found")
-    try:
-        path = LocalStorage().open(asset.storage_key)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Not found") from exc
+    resolved = _resolve_public_menu_asset(db, public_code)
+    if isinstance(resolved, PlainTextResponse):
+        return resolved
+    asset, path = resolved
     return FileResponse(
         path,
         media_type="application/pdf",
@@ -1626,6 +1538,106 @@ def _validated_business_patch(data: dict[str, object]) -> dict[str, object]:
     ):
         raise HTTPException(status_code=400, detail="External URL is invalid")
     return validated
+
+
+def _public_unavailable_response() -> PlainTextResponse:
+    return PlainTextResponse("Este menú no se encuentra disponible actualmente.", status_code=403)
+
+
+def _get_public_link_or_404(db: Session, public_code: str) -> DynamicLink:
+    link = db.scalar(select(DynamicLink).where(DynamicLink.public_code == public_code))
+    if link is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return link
+
+
+def _get_public_link_and_business(
+    db: Session, public_code: str
+) -> tuple[DynamicLink, Business] | PlainTextResponse:
+    link = _get_public_link_or_404(db, public_code)
+    business = db.get(Business, link.business_id)
+    if (
+        business is None
+        or not link.is_active
+        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
+    ):
+        return _public_unavailable_response()
+    return link, business
+
+
+def _resolve_public_redirect_target(
+    db: Session, public_code: str
+) -> tuple[DynamicLink, str] | PlainTextResponse:
+    link_and_business = _get_public_link_and_business(db, public_code)
+    if isinstance(link_and_business, PlainTextResponse):
+        return link_and_business
+    link, business = link_and_business
+    if business.destination_type == DestinationType.external_url:
+        external_url = _resolve_external_destination_url(business)
+        if external_url is None:
+            return _public_unavailable_response()
+        return link, external_url
+    if business.destination_type == DestinationType.digital_menu:
+        payload_result = _get_public_digital_menu_page_payload_or_response(db, public_code)
+        if isinstance(payload_result, PlainTextResponse):
+            return payload_result
+        return link, _public_menu_page_url(public_code)
+    if business.destination_type == DestinationType.menu_pdf:
+        asset_result = _resolve_public_menu_asset(db, public_code)
+        if isinstance(asset_result, PlainTextResponse):
+            return asset_result
+        return link, _public_menu_url(public_code)
+    return _public_unavailable_response()
+
+
+def _resolve_external_destination_url(business: Business) -> str | None:
+    if not business.external_url:
+        return None
+    parsed = urlparse(business.external_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return business.external_url
+
+
+def _resolve_public_menu_asset(
+    db: Session, public_code: str
+) -> tuple[MenuAsset, Path] | PlainTextResponse:
+    link_and_business = _get_public_link_and_business(db, public_code)
+    if isinstance(link_and_business, PlainTextResponse):
+        return link_and_business
+    _, business = link_and_business
+    if business.destination_type != DestinationType.menu_pdf:
+        return _public_unavailable_response()
+    asset = get_active_menu(db, business.id)
+    if asset is None:
+        return _public_unavailable_response()
+    try:
+        path = LocalStorage().open(asset.storage_key)
+    except FileNotFoundError:
+        return _public_unavailable_response()
+    return asset, path
+
+
+def _get_public_digital_menu_payload_or_response(
+    db: Session, public_code: str
+) -> tuple[Business, DigitalMenu, dict[str, object]] | PlainTextResponse:
+    try:
+        return get_public_digital_menu_payload(db, public_code)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return _public_unavailable_response()
+        raise
+
+
+def _get_public_digital_menu_page_payload_or_response(
+    db: Session, public_code: str
+) -> tuple[Business, DigitalMenu, dict[str, object]] | PlainTextResponse:
+    try:
+        return get_public_digital_menu_page_payload(db, public_code)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return _public_unavailable_response()
+        raise
 
 
 def _public_menu_url(public_code: str) -> str:

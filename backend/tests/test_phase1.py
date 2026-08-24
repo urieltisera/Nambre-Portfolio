@@ -35,6 +35,7 @@ from app.services.user_admin_service import (
     CreatePlatformAdminResult,
     create_platform_admin,
 )
+from app.storage.local import LocalStorage
 from tests.conftest import add_membership, auth_headers, make_business, make_user
 
 PDF_V1 = b"%PDF-1.4\n%v1\n%%EOF\n"
@@ -1025,6 +1026,93 @@ def test_public_menu_url_serves_current_asset_with_no_store_headers(client, db: 
     assert menu_v1_again.status_code == 200
     assert menu_v1_again.content == PDF_V1
     assert_dynamic_menu_cache_headers(menu_v1_again)
+
+
+def test_direct_public_menu_fetch_does_not_create_qr_scan_event(client, db: Session) -> None:
+    owner = make_user(db, "owner-direct-public-menu@example.com")
+    business = make_business(db, "Direct Public Menu", "direct-public-menu")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    uploaded = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu.pdf")],
+    )
+    assert uploaded.status_code == 200
+    public_code = uploaded.json()["public_code"]
+
+    direct = client.get(f"/m/{public_code}/menu.pdf")
+    assert direct.status_code == 200
+    assert direct.content == PDF_V1
+    assert (
+        db.scalar(select(ScanEvent).where(ScanEvent.business_id == business.id)) is None
+    )
+
+
+def test_missing_public_pdf_returns_safe_state_and_does_not_record_scan(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "owner-missing-public-pdf@example.com")
+    business = make_business(db, "Missing Public PDF", "missing-public-pdf")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    uploaded = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu.pdf")],
+    )
+    assert uploaded.status_code == 200
+    current_asset_id = uploaded.json()["current"]["id"]
+    public_code = uploaded.json()["public_code"]
+
+    asset = db.get(MenuAsset, current_asset_id)
+    assert asset is not None
+    LocalStorage().open(asset.storage_key).unlink()
+
+    redirect = client.get(f"/r/{public_code}")
+    assert redirect.status_code == 403
+    assert redirect.text == "Este menú no se encuentra disponible actualmente."
+
+    direct = client.get(f"/m/{public_code}/menu.pdf")
+    assert direct.status_code == 403
+    assert direct.text == "Este menú no se encuentra disponible actualmente."
+
+    assert (
+        db.scalar(select(ScanEvent).where(ScanEvent.business_id == business.id)) is None
+    )
+
+
+def test_inactive_dynamic_link_blocks_resolution_and_keeps_scan_count_zero(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "owner-inactive-link@example.com")
+    business = make_business(db, "Inactive Link Biz", "inactive-link-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    uploaded = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu.pdf")],
+    )
+    assert uploaded.status_code == 200
+    public_code = uploaded.json()["public_code"]
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    link.is_active = False
+    db.commit()
+
+    redirect = client.get(f"/r/{public_code}")
+    assert redirect.status_code == 403
+    assert redirect.text == "Este menú no se encuentra disponible actualmente."
+
+    direct = client.get(f"/m/{public_code}/menu.pdf")
+    assert direct.status_code == 403
+    assert direct.text == "Este menú no se encuentra disponible actualmente."
+
+    assert (
+        db.scalar(select(ScanEvent).where(ScanEvent.business_id == business.id)) is None
+    )
 
 
 def test_platform_admin_access_and_owner_forbidden(client, db: Session) -> None:

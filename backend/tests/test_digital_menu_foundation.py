@@ -942,6 +942,127 @@ def test_draft_preview_publish_flow_keeps_public_snapshot_stable(client, db: Ses
     assert public_v2.json()["categories"][0]["items"][0]["price"] == "1200.00"
 
 
+def test_public_redirect_to_digital_menu_keeps_same_code_across_published_versions(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "redirect-version-owner@example.com")
+    business = make_business(
+        db, "Redirect Versions Biz", "redirect-versions-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=headers,
+        json={"name": "Carta versionada"},
+    ).json()
+    category = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=headers,
+        json={"name": "Principales", "position": 0},
+    ).json()
+    item = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{category['id']}/items",
+        headers=headers,
+        json={"name": "Milanesa", "price": "1000.00", "currency": "ARS", "position": 0},
+    )
+    assert item.status_code == 200
+
+    switched = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=headers,
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    public_code = link.public_code
+
+    _publish_menu(client, business.id, menu["id"], headers)
+
+    redirect_v1 = client.get(f"/r/{public_code}", headers={"User-Agent": "Mobile Safari"})
+    assert redirect_v1.status_code == 302
+    assert redirect_v1.headers["location"] == f"/m/{public_code}"
+    public_v1 = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_v1.status_code == 200
+    assert public_v1.json()["categories"][0]["items"][0]["price"] == "1000.00"
+
+    price_patch = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/items/{item.json()['id']}",
+        headers=headers,
+        json={"price": "1200.00"},
+    )
+    assert price_patch.status_code == 200
+
+    redirect_still_v1 = client.get(f"/r/{public_code}", headers={"User-Agent": "Mobile Safari"})
+    assert redirect_still_v1.status_code == 302
+    assert redirect_still_v1.headers["location"] == f"/m/{public_code}"
+    public_still_v1 = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_still_v1.status_code == 200
+    assert public_still_v1.json()["categories"][0]["items"][0]["price"] == "1000.00"
+
+    _publish_menu(client, business.id, menu["id"], headers)
+    db.refresh(link)
+    assert link.public_code == public_code
+
+    redirect_v2 = client.get(f"/r/{public_code}", headers={"User-Agent": "Mobile Safari"})
+    assert redirect_v2.status_code == 302
+    assert redirect_v2.headers["location"] == f"/m/{public_code}"
+    public_v2 = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_v2.status_code == 200
+    assert public_v2.json()["categories"][0]["items"][0]["price"] == "1200.00"
+
+
+def test_switching_away_from_digital_menu_blocks_legacy_public_menu_routes(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "legacy-public-routes-owner@example.com")
+    business = make_business(
+        db, "Legacy Public Routes Biz", "legacy-public-routes-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    _create_menu_item(client, business.id, menu_id, category_id, headers)
+    _publish_menu(client, business.id, menu_id, headers)
+
+    switched_to_menu = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=headers,
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched_to_menu.status_code == 200
+
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+    public_code = link.public_code
+
+    public_before = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_before.status_code == 200
+    legacy_before = client.get(f"/m/{public_code}/digital-menu")
+    assert legacy_before.status_code == 200
+
+    switched_to_external = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=headers,
+        json={
+            "destination_type": "external_url",
+            "external_url": "https://ejemplo.com/carta",
+        },
+    )
+    assert switched_to_external.status_code == 200
+
+    public_after = client.get(f"/api/public/digital-menus/{public_code}")
+    assert public_after.status_code == 403
+    assert public_after.text == "Este menú no se encuentra disponible actualmente."
+    legacy_after = client.get(f"/m/{public_code}/digital-menu")
+    assert legacy_after.status_code == 403
+    assert legacy_after.text == "Este menú no se encuentra disponible actualmente."
+
+
 def test_theme_changes_stay_in_draft_until_publish(client, db: Session) -> None:
     owner = make_user(db, "theme-draft-owner@example.com")
     business = make_business(
@@ -1624,3 +1745,5 @@ def test_admin_downgrade_from_premium_without_external_url_or_pdf_stays_safe(
     redirect = client.get(f"/r/{public_code}")
     assert redirect.status_code == 403
     assert redirect.text == "Este menú no se encuentra disponible actualmente."
+    assert client.get(f"/api/public/digital-menus/{public_code}").status_code == 403
+    assert client.get(f"/m/{public_code}/digital-menu").status_code == 403

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Business,
+    BusinessStatus,
     DestinationType,
     DigitalMenu,
     DigitalMenuPublishedSnapshot,
@@ -364,7 +365,9 @@ def set_digital_menu_as_business_destination(
 
 def sync_current_destination(db: Session, business: Business) -> None:
     if business.destination_type == DestinationType.external_url:
-        ensure_dynamic_link(db, business.id)
+        link = ensure_dynamic_link(db, business.id)
+        link.destination_type = DestinationType.external_url
+        link.updated_at = datetime.now(UTC)
         return
     if business.destination_type == DestinationType.digital_menu:
         set_digital_menu_as_business_destination(db, business)
@@ -460,7 +463,12 @@ def get_public_digital_menu_payload(
     if link is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     business = db.get(Business, link.business_id)
-    if business is None:
+    if (
+        business is None
+        or not link.is_active
+        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
+        or business.destination_type != DestinationType.digital_menu
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     menu = db.get(DigitalMenu, link.destination_id)
     if (

@@ -413,7 +413,7 @@ describe("BusinessPanel logo flow", () => {
     expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", {name: "Estadísticas"}));
-    expect(screen.getByText(/5:00/)).toBeTruthy();
+    expect(await screen.findByText(/5:00/)).toBeTruthy();
 
     currentBusiness = {
       ...currentBusiness,
@@ -603,9 +603,10 @@ describe("BusinessPanel logo flow", () => {
 
     const [windowSwitcher] = screen.getAllByRole("tablist", {name: "Ventana de actividad"});
     expect(within(windowSwitcher).getByRole("tab", {name: "7 días"}).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByTestId("activity-chart-summary").textContent).toContain("189");
-    expect(screen.getByTestId("activity-chart-summary").textContent).toContain("30-ago");
-    expect(screen.getByTestId("activity-chart-summary").textContent).toContain("30 visualizaciones");
+    const initialSummary = await screen.findByTestId("activity-chart-summary");
+    expect(initialSummary.textContent).toContain("189");
+    expect(initialSummary.textContent).toContain("30-ago");
+    expect(initialSummary.textContent).toContain("30 visualizaciones");
 
     fireEvent.click(within(windowSwitcher).getByRole("tab", {name: "30 días"}));
 

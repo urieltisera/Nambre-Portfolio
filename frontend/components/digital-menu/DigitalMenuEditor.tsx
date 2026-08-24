@@ -1,7 +1,7 @@
 "use client";
 
 import React, {useEffect, useMemo, useState} from "react";
-import {Eye, EyeOff, Pencil, Plus, Sparkles, Trash2} from "lucide-react";
+import {ArrowUpRight, Eye, EyeOff, Pencil, Plus, Rocket, Sparkles, Trash2} from "lucide-react";
 import {DigitalMenuDesignEditor} from "@/components/digital-menu/DigitalMenuDesignEditor";
 import {Alert} from "@/components/ui/Alert";
 import {Badge} from "@/components/ui/Badge";
@@ -18,6 +18,7 @@ import {
   deleteMenuItem,
   deleteMenuItemImage,
   DigitalMenu,
+  fetchDigitalMenuPreview,
   digitalMenuErrorMessage,
   DigitalMenuThemePayload,
   digitalMenuThemeErrorMessage,
@@ -26,7 +27,9 @@ import {
   listMenuItems,
   MenuCategory,
   MenuItem,
+  publishDigitalMenu,
   productImageErrorMessage,
+  unpublishDigitalMenu,
   updateDigitalMenu,
   updateMenuCategory,
   updateMenuItem,
@@ -71,6 +74,14 @@ export function DigitalMenuEditor({
   const [categoryEditor, setCategoryEditor] = useState<CategoryEditorState>(null);
   const [itemEditor, setItemEditor] = useState<ItemEditorState>(null);
   const [activeView, setActiveView] = useState<"content" | "design">("content");
+  const [publishing, setPublishing] = useState(false);
+  const [openingPreview, setOpeningPreview] = useState(false);
+
+  const hasPublication = menu?.has_publication === true || (menu?.published_version ?? 0) > 0;
+  const hasUnpublishedChanges =
+    menu?.has_unpublished_changes === true ||
+    (menu?.draft_revision ?? 0) > (menu?.published_revision ?? 0);
+  const canPublish = menu ? !hasPublication || hasUnpublishedChanges : false;
 
   const itemsByCategory = useMemo(() => {
     const grouped = new Map<string, MenuItem[]>();
@@ -143,6 +154,62 @@ export function DigitalMenuEditor({
       setFeedback("Diseño guardado correctamente.");
     } catch (saveError: unknown) {
       setError(digitalMenuThemeErrorMessage(saveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOpenPreview() {
+    if (!menu) return;
+    setOpeningPreview(true);
+    setError("");
+    try {
+      await fetchDigitalMenuPreview(token, business.id, menu.id);
+      window.open(
+        `/preview/digital-menu?businessId=${business.id}&menuId=${menu.id}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } catch (previewError: unknown) {
+      setError(digitalMenuErrorMessage(previewError, "No pudimos abrir la vista previa."));
+    } finally {
+      setOpeningPreview(false);
+    }
+  }
+
+  async function handlePublish() {
+    if (!menu) return;
+    setPublishing(true);
+    setFeedback("");
+    setError("");
+    try {
+      const result = await publishDigitalMenu(token, business.id, menu.id);
+      setMenu(result.menu);
+      setFeedback(`Carta publicada. Versión v${result.version}.`);
+      await loadEditorState();
+      await onBusinessRefresh();
+    } catch (publishError: unknown) {
+      setError(digitalMenuErrorMessage(publishError, "No pudimos publicar la carta."));
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function handleUnpublish() {
+    if (!menu) return;
+    const confirmed = window.confirm("¿Despublicar la carta pública actual?");
+    if (!confirmed) return;
+    setBusy(true);
+    setFeedback("");
+    setError("");
+    try {
+      const updated = await unpublishDigitalMenu(token, business.id, menu.id);
+      setMenu(updated);
+      setFeedback("Carta despublicada.");
+      await loadEditorState();
+      await onBusinessRefresh();
+    } catch (unpublishError: unknown) {
+      setError(digitalMenuErrorMessage(unpublishError, "No pudimos despublicar la carta."));
     } finally {
       setBusy(false);
     }
@@ -377,28 +444,58 @@ export function DigitalMenuEditor({
             <p className="muted">
               Administrá contenido y estados desde el dashboard. Nambre se ocupa del layout.
             </p>
+            {menu ? (
+              <p className="muted">
+                {hasPublication
+                  ? menu.is_published
+                    ? `Publicado · v${menu.published_version ?? 0}${hasUnpublishedChanges ? " · Cambios sin publicar" : " · Sin cambios pendientes"}`
+                    : `Borrador · Última versión publicada v${menu.published_version ?? 0}`
+                  : "Borrador · Nunca publicado"}
+              </p>
+            ) : null}
           </div>
-          <div aria-label="Secciones de Carta Nambre" className="digital-menu-view-switch" role="tablist">
-            <button
-              aria-selected={activeView === "content"}
-              className="digital-menu-view-switch__tab"
-              data-active={activeView === "content"}
-              onClick={() => setActiveView("content")}
-              role="tab"
-              type="button"
-            >
-              Carta
-            </button>
-            <button
-              aria-selected={activeView === "design"}
-              className="digital-menu-view-switch__tab"
-              data-active={activeView === "design"}
-              onClick={() => setActiveView("design")}
-              role="tab"
-              type="button"
-            >
-              Diseño
-            </button>
+          <div>
+            {menu ? (
+              <div className="digital-menu-inline-actions">
+                <Button disabled={openingPreview || busy} onClick={() => void handleOpenPreview()} size="sm" variant="secondary">
+                  <ArrowUpRight size={16} /> {openingPreview ? "Abriendo..." : "Abrir vista previa"}
+                </Button>
+                <Button
+                  disabled={publishing || busy || !canPublish}
+                  onClick={() => void handlePublish()}
+                  size="sm"
+                >
+                  <Rocket size={16} /> {publishing ? "Publicando..." : "Publicar"}
+                </Button>
+                {hasPublication ? (
+                  <Button disabled={busy || !menu.is_published} onClick={() => void handleUnpublish()} size="sm" variant="ghost">
+                    Despublicar
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            <div aria-label="Secciones de Carta Nambre" className="digital-menu-view-switch" role="tablist">
+              <button
+                aria-selected={activeView === "content"}
+                className="digital-menu-view-switch__tab"
+                data-active={activeView === "content"}
+                onClick={() => setActiveView("content")}
+                role="tab"
+                type="button"
+              >
+                Carta
+              </button>
+              <button
+                aria-selected={activeView === "design"}
+                className="digital-menu-view-switch__tab"
+                data-active={activeView === "design"}
+                onClick={() => setActiveView("design")}
+                role="tab"
+                type="button"
+              >
+                Diseño
+              </button>
+            </div>
           </div>
         </div>
         {selectedMode !== "digital_menu" ? (

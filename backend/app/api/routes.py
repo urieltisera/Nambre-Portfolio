@@ -50,7 +50,6 @@ from app.models import (
     BusinessStatus,
     DestinationType,
     DigitalMenu,
-    DigitalMenuStatus,
     DynamicLink,
     InvitationToken,
     LegalAcceptance,
@@ -74,6 +73,8 @@ from app.schemas import (
     DigitalMenuCreateIn,
     DigitalMenuOut,
     DigitalMenuPatchIn,
+    DigitalMenuPreviewOut,
+    DigitalMenuPublishOut,
     InvitationAcceptIn,
     InvitationCreateOut,
     LegalAcceptIn,
@@ -108,17 +109,22 @@ from app.services.auth_service import (
     reset_password,
 )
 from app.services.digital_menu_service import (
+    build_draft_preview_payload,
     create_business_digital_menu,
     create_menu_category,
     create_menu_item,
     get_business_digital_menu,
     get_public_digital_menu_page_payload,
     get_public_digital_menu_payload,
+    get_published_snapshot_image_key,
     list_menu_categories,
     list_menu_items,
+    public_menu_response_from_snapshot,
+    publish_digital_menu,
     remove_menu_category,
     remove_menu_item,
     sync_current_destination,
+    unpublish_digital_menu,
     update_business_digital_menu,
     update_menu_category,
     update_menu_item,
@@ -642,6 +648,83 @@ def patch_digital_menu(
 
 
 @router.get(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/preview",
+    response_model=DigitalMenuPreviewOut,
+)
+def preview_digital_menu(
+    business_id: str,
+    menu_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
+    menu = get_business_digital_menu(db, business_id, menu_id)
+    return build_draft_preview_payload(db, business, menu)
+
+
+@router.post(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/publish",
+    response_model=DigitalMenuPublishOut,
+)
+def publish_business_digital_menu(
+    business_id: str,
+    menu_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
+    menu = get_business_digital_menu(db, business_id, menu_id)
+    snapshot = publish_digital_menu(db, business=business, menu=menu, actor_user_id=user.id)
+    record_audit_event(
+        db,
+        event_type="digital_menu.publish",
+        actor_user_id=user.id,
+        business_id=business.id,
+        target_type="digital_menu",
+        target_id=menu.id,
+        details={"published_at": snapshot.published_at.isoformat(), "version": snapshot.version},
+    )
+    db.commit()
+    db.refresh(menu)
+    return {"menu": menu, "published_at": snapshot.published_at, "version": snapshot.version}
+
+
+@router.post(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/unpublish",
+    response_model=DigitalMenuOut,
+)
+def unpublish_business_digital_menu(
+    business_id: str,
+    menu_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DigitalMenu:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
+    menu = get_business_digital_menu(db, business_id, menu_id)
+    updated = unpublish_digital_menu(menu)
+    record_audit_event(
+        db,
+        event_type="digital_menu.unpublish",
+        actor_user_id=user.id,
+        business_id=business.id,
+        target_type="digital_menu",
+        target_id=menu.id,
+        details={"published_version": menu.published_version},
+    )
+    db.commit()
+    return updated
+
+
+@router.get(
     "/api/businesses/{business_id}/digital-menu/{menu_id}/categories",
     response_model=list[MenuCategoryOut],
 )
@@ -1149,14 +1232,16 @@ def public_digital_menu(
         return PlainTextResponse(
             "Este menú no se encuentra disponible actualmente.", status_code=403
         )
-    _, menu, categories = get_public_digital_menu_payload(db, public_code)
+    _, _, snapshot_payload = get_public_digital_menu_payload(db, public_code)
+    payload = public_menu_response_from_snapshot(snapshot_payload, public_code)
+    menu = payload["menu"]
     return PublicDigitalMenuOut(
-        id=menu.id,
-        business_id=menu.business_id,
-        name=menu.name,
-        template_key=menu.template_key,
-        theme=menu.theme,
-        categories=categories,
+        id=menu["id"],
+        business_id=menu["business_id"],
+        name=menu["name"],
+        template_key=menu["template_key"],
+        theme=payload["theme"],
+        categories=payload["categories"],
     )
 
 
@@ -1181,55 +1266,41 @@ def public_digital_menu_page_data(
             "Este menú no se encuentra disponible actualmente.", status_code=403
         )
     try:
-        business, menu, categories = get_public_digital_menu_page_payload(db, public_code)
+        business, _, snapshot_payload = get_public_digital_menu_page_payload(db, public_code)
     except HTTPException as exc:
         if exc.status_code == 404:
             return PlainTextResponse(
                 "Este menú no se encuentra disponible actualmente.", status_code=403
             )
         raise
+    payload = public_menu_response_from_snapshot(snapshot_payload, public_code)
     return PublicDigitalMenuPageOut(
-        business={
-            "id": business.id,
-            "logo_url": business.logo_url,
-            "name": business.name,
-        },
-        menu=menu,
-        theme=menu.theme,
-        categories=categories,
+        business=payload["business"],
+        menu=payload["menu"],
+        theme=payload["theme"],
+        categories=payload["categories"],
     )
 
 
-@router.get("/media/menu-items/{item_id}/{filename}", response_model=None)
+@router.get(
+    "/api/public/digital-menus/{public_code}/images/{version}/{item_id}/{filename}",
+    response_model=None,
+)
 def public_menu_item_image(
-    item_id: str, filename: str, db: Session = Depends(get_db)
+    public_code: str,
+    version: int,
+    item_id: str,
+    filename: str,
+    db: Session = Depends(get_db),
 ) -> FileResponse:
-    item = db.get(MenuItem, item_id)
-    if (
-        item is None
-        or not item.image_key
-        or Path(item.image_key).name != filename
-        or not item.is_visible
-    ):
-        raise HTTPException(status_code=404, detail="Not found")
-    category = db.get(MenuCategory, item.category_id)
-    if category is None or not category.is_visible:
-        raise HTTPException(status_code=404, detail="Not found")
-    menu = db.get(DigitalMenu, category.digital_menu_id)
-    if (
-        menu is None
-        or menu.status != DigitalMenuStatus.published
-        or not menu.is_published
-    ):
-        raise HTTPException(status_code=404, detail="Not found")
-    business = db.get(Business, menu.business_id)
-    if (
-        business is None
-        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
-        or not business_has_feature(business, BusinessFeatureKey.digital_menu)
-    ):
-        raise HTTPException(status_code=404, detail="Not found")
-    path = LocalStorage().open(item.image_key)
+    image_key = get_published_snapshot_image_key(
+        db,
+        public_code=public_code,
+        version=version,
+        item_id=item_id,
+        filename=filename,
+    )
+    path = LocalStorage().open(image_key)
     return FileResponse(
         path,
         media_type="image/webp",

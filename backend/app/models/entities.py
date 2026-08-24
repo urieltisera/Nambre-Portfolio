@@ -4,6 +4,7 @@ from enum import StrEnum
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
@@ -240,6 +241,10 @@ class DigitalMenu(Base):
         Enum(CardStyleKey), default=CardStyleKey.rounded
     )
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    draft_revision: Mapped[int] = mapped_column(Integer, default=0)
+    published_revision: Mapped[int] = mapped_column(Integer, default=0)
+    published_version: Mapped[int] = mapped_column(Integer, default=0)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
@@ -255,6 +260,32 @@ class DigitalMenu(Base):
             "body_font": self.body_font,
             "card_style": self.card_style,
         }
+
+    @property
+    def has_unpublished_changes(self) -> bool:
+        return self.draft_revision > self.published_revision
+
+    @property
+    def has_publication(self) -> bool:
+        return self.published_version > 0
+
+
+class DigitalMenuPublishedSnapshot(Base):
+    __tablename__ = "digital_menu_published_snapshots"
+    __table_args__ = (
+        UniqueConstraint("digital_menu_id", "version", name="uq_digital_menu_snapshot_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    digital_menu_id: Mapped[str] = mapped_column(
+        ForeignKey("digital_menus.id", ondelete="CASCADE"), index=True
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
 class MenuCategory(Base):

@@ -245,9 +245,30 @@ class DigitalMenuOut(BaseModel):
         default_factory=lambda: DigitalMenuThemeOut(**DEFAULT_MENU_THEME)
     )
     is_published: bool
+    draft_revision: int
+    published_revision: int
+    published_version: int
+    published_at: datetime | None
+    has_unpublished_changes: bool
+    has_publication: bool
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class DigitalMenuPublishOut(BaseModel):
+    menu: DigitalMenuOut
+    version: int
+    published_at: datetime
+
+
+class DigitalMenuPreviewOut(BaseModel):
+    business: "PublicBusinessSummaryOut"
+    menu: DigitalMenuOut
+    theme: DigitalMenuThemeOut = Field(
+        default_factory=lambda: DigitalMenuThemeOut(**DEFAULT_MENU_THEME)
+    )
+    categories: list["PublicMenuCategorySectionOut"]
 
 
 class MenuCategoryCreateIn(BaseModel):

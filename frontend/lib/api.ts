@@ -49,8 +49,20 @@ export type DigitalMenu = {
   template_key: string;
   theme?: MenuThemeConfig;
   is_published: boolean;
+  draft_revision?: number;
+  published_revision?: number;
+  published_version?: number;
+  published_at?: string | null;
+  has_unpublished_changes?: boolean;
+  has_publication?: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type DigitalMenuPublishResult = {
+  menu: DigitalMenu;
+  version: number;
+  published_at: string;
 };
 
 export type PublicBusinessSummary = {
@@ -551,6 +563,41 @@ export async function updateDigitalMenu(
   });
 }
 
+export async function fetchDigitalMenuPreview(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+): Promise<PublicDigitalMenuPage> {
+  return request<PublicDigitalMenuPage>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/preview`,
+    token,
+  );
+}
+
+export async function publishDigitalMenu(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+): Promise<DigitalMenuPublishResult> {
+  return request<DigitalMenuPublishResult>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/publish`,
+    token,
+    {method: "POST"},
+  );
+}
+
+export async function unpublishDigitalMenu(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+): Promise<DigitalMenu> {
+  return request<DigitalMenu>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/unpublish`,
+    token,
+    {method: "POST"},
+  );
+}
+
 export async function listMenuCategories(
   token: string | null | undefined,
   businessId: string,
@@ -918,6 +965,12 @@ export function digitalMenuErrorMessage(error: unknown, fallback: string): strin
     }
     if (error.detail === "Feature not enabled: digital_menu") {
       return "Carta Nambre está disponible solo en Premium.";
+    }
+    if (error.detail === "Digital menus must start as draft and require explicit publish") {
+      return "La carta arranca como borrador y se publica desde el editor.";
+    }
+    if (error.detail === "At least one visible category with visible items is required") {
+      return "Necesitás al menos una categoría visible con un producto visible para publicar.";
     }
     if (error.status === 422) {
       return fallback;

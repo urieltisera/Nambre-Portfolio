@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Business,
     BusinessPlanKey,
+    BusinessStatus,
     DestinationType,
     DynamicLink,
     MembershipRole,
@@ -77,6 +78,14 @@ def _image_bytes(
     return output.getvalue()
 
 
+def _image_center_rgb(content: bytes) -> tuple[int, int, int]:
+    with Image.open(BytesIO(content)) as image:
+        rgb = image.convert("RGB")
+        x = rgb.width // 2
+        y = rgb.height // 2
+        return rgb.getpixel((x, y))
+
+
 def _create_menu_item(
     client,
     business_id: str,
@@ -91,6 +100,20 @@ def _create_menu_item(
         f"/api/businesses/{business_id}/digital-menu/{menu_id}/categories/{category_id}/items",
         headers=headers,
         json={"name": name, "price": price, "currency": "ARS"},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _publish_menu(
+    client,
+    business_id: str,
+    menu_id: str,
+    headers: dict[str, str],
+) -> dict[str, object]:
+    response = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/publish",
+        headers=headers,
     )
     assert response.status_code == 200
     return response.json()
@@ -283,8 +306,6 @@ def test_public_digital_menu_api_returns_theme_without_private_fields(client, db
         headers=auth_headers(owner),
         json={
             "name": "Carta pública",
-            "status": "published",
-            "is_published": True,
             "theme": {
                 "accent_color": "#222222",
                 "background_color": "#15171B",
@@ -298,6 +319,20 @@ def test_public_digital_menu_api_returns_theme_without_private_fields(client, db
         },
     )
     assert created.status_code == 200
+    menu_id = created.json()["id"]
+    category = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/categories",
+        headers=auth_headers(owner),
+        json={"name": "Principales", "position": 0},
+    )
+    assert category.status_code == 200
+    item = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/categories/{category.json()['id']}/items",
+        headers=auth_headers(owner),
+        json={"name": "Cafe", "price": "2000.00", "currency": "ARS"},
+    )
+    assert item.status_code == 200
+    _publish_menu(client, business.id, menu_id, auth_headers(owner))
 
     switched = client.patch(
         f"/api/businesses/{business.id}",
@@ -569,17 +604,17 @@ def test_switching_business_to_digital_menu_keeps_public_code_and_serves_public_
         json={
             "name": "Carta publica",
             "template_key": "modern",
-            "status": "published",
-            "is_published": True,
         },
-    ).json()
+    )
+    assert menu.status_code == 200
+    menu_payload = menu.json()
     category = client.post(
-        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories",
         headers=auth_headers(owner),
         json={"name": "Destacados", "position": 0},
     ).json()
     item = client.post(
-        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{category['id']}/items",
+        f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories/{category['id']}/items",
         headers=auth_headers(owner),
         json={
             "name": "Empanada",
@@ -591,6 +626,7 @@ def test_switching_business_to_digital_menu_keeps_public_code_and_serves_public_
         },
     )
     assert item.status_code == 200
+    _publish_menu(client, business.id, menu_payload["id"], auth_headers(owner))
 
     switched = client.patch(
         f"/api/businesses/{business.id}",
@@ -636,30 +672,30 @@ def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
         json={
             "name": "Carta publica",
             "template_key": "modern",
-            "status": "published",
-            "is_published": True,
         },
-    ).json()
+    )
+    assert menu.status_code == 200
+    menu_payload = menu.json()
 
     mains = client.post(
-        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories",
         headers=auth_headers(owner),
         json={"name": "Principales", "description": "Platos fuertes", "position": 2},
     ).json()
     drinks = client.post(
-        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories",
         headers=auth_headers(owner),
         json={"name": "Bebidas", "position": 1},
     ).json()
     hidden = client.post(
-        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories",
         headers=auth_headers(owner),
         json={"name": "Secretos", "position": 0, "is_visible": False},
     ).json()
 
     assert (
         client.post(
-            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{drinks['id']}/items",
+            f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories/{drinks['id']}/items",
             headers=auth_headers(owner),
             json={
                 "name": "Agua con gas",
@@ -673,7 +709,7 @@ def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
     )
     assert (
         client.post(
-            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{drinks['id']}/items",
+            f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories/{drinks['id']}/items",
             headers=auth_headers(owner),
             json={
                 "name": "Limonada",
@@ -687,7 +723,7 @@ def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
     )
     assert (
         client.post(
-            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{mains['id']}/items",
+            f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories/{mains['id']}/items",
             headers=auth_headers(owner),
             json={
                 "name": "Milanesa napolitana",
@@ -701,7 +737,7 @@ def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
     )
     assert (
         client.post(
-            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{mains['id']}/items",
+            f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories/{mains['id']}/items",
             headers=auth_headers(owner),
             json={
                 "name": "Oculto",
@@ -715,7 +751,7 @@ def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
     )
     assert (
         client.post(
-            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{hidden['id']}/items",
+            f"/api/businesses/{business.id}/digital-menu/{menu_payload['id']}/categories/{hidden['id']}/items",
             headers=auth_headers(owner),
             json={
                 "name": "Nunca publico",
@@ -726,6 +762,7 @@ def test_public_digital_menu_page_filters_hidden_content_and_keeps_safe_states(
         ).status_code
         == 200
     )
+    _publish_menu(client, business.id, menu_payload["id"], auth_headers(owner))
 
     switched = client.patch(
         f"/api/businesses/{business.id}",
@@ -819,18 +856,306 @@ def test_premium_business_can_upload_jpeg_png_and_webp_product_images(
             files=_image_upload(filename, content, content_type),
         )
         assert response.status_code == 200
-        body = response.json()
-        assert body["image_url"] is not None
-        assert body["image_url"] == (
-            f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image"
-        )
 
-        persisted = db.get(MenuItem, item["id"])
-        assert persisted is not None
-        assert persisted.image_key is not None
-        with Image.open(LocalStorage().open(persisted.image_key)) as stored:
-            assert stored.format == "WEBP"
-            assert max(stored.width, stored.height) <= 1200
+
+def test_draft_preview_publish_flow_keeps_public_snapshot_stable(client, db: Session) -> None:
+    owner = make_user(db, "draft-preview-owner@example.com")
+    business = make_business(
+        db, "Draft Preview Biz", "draft-preview-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=headers,
+        json={"name": "Carta draft"},
+    ).json()
+    category = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=headers,
+        json={"name": "Principales", "position": 0},
+    ).json()
+    item = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{category['id']}/items",
+        headers=headers,
+        json={"name": "Milanesa", "price": "1000.00", "currency": "ARS", "position": 0},
+    )
+    assert item.status_code == 200
+
+    switched = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=headers,
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    assert client.get(f"/api/public/digital-menus/{link.public_code}").status_code == 403
+
+    preview_v0 = client.get(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/preview",
+        headers=headers,
+    )
+    assert preview_v0.status_code == 200
+    assert preview_v0.json()["categories"][0]["items"][0]["price"] == "1000.00"
+
+    published_v1 = _publish_menu(client, business.id, menu["id"], headers)
+    assert published_v1["version"] == 1
+
+    public_v1 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_v1.status_code == 200
+    assert public_v1.json()["menu"]["published_version"] == 1
+    assert public_v1.json()["categories"][0]["items"][0]["price"] == "1000.00"
+
+    price_patch = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/items/{item.json()['id']}",
+        headers=headers,
+        json={"price": "1200.00"},
+    )
+    assert price_patch.status_code == 200
+    assert price_patch.json()["price"] == "1200.00"
+
+    menu_state = client.get(f"/api/businesses/{business.id}/digital-menu", headers=headers)
+    assert menu_state.status_code == 200
+    assert menu_state.json()["has_unpublished_changes"] is True
+    assert menu_state.json()["published_version"] == 1
+
+    public_still_v1 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_still_v1.status_code == 200
+    assert public_still_v1.json()["categories"][0]["items"][0]["price"] == "1000.00"
+
+    preview_v2 = client.get(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/preview",
+        headers=headers,
+    )
+    assert preview_v2.status_code == 200
+    assert preview_v2.json()["categories"][0]["items"][0]["price"] == "1200.00"
+
+    published_v2 = _publish_menu(client, business.id, menu["id"], headers)
+    assert published_v2["version"] == 2
+
+    public_v2 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_v2.status_code == 200
+    assert public_v2.json()["menu"]["published_version"] == 2
+    assert public_v2.json()["categories"][0]["items"][0]["price"] == "1200.00"
+
+
+def test_theme_changes_stay_in_draft_until_publish(client, db: Session) -> None:
+    owner = make_user(db, "theme-draft-owner@example.com")
+    business = make_business(
+        db, "Theme Draft Biz", "theme-draft-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=headers,
+        json={"name": "Carta colores"},
+    ).json()
+    category = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=headers,
+        json={"name": "Principales"},
+    ).json()
+    assert (
+        client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{category['id']}/items",
+            headers=headers,
+            json={"name": "Cafe", "price": "1500.00", "currency": "ARS"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.patch(
+            f"/api/businesses/{business.id}",
+            headers=headers,
+            json={"destination_type": "digital_menu"},
+        ).status_code
+        == 200
+    )
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    _publish_menu(client, business.id, menu["id"], headers)
+    original_public = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert original_public.status_code == 200
+    assert original_public.json()["theme"]["accent_color"] == DEFAULT_THEME["accent_color"]
+
+    theme_patch = client.patch(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}",
+        headers=headers,
+        json={"theme": {"accent_color": "#1F3A2D", "background_color": "#E8F0EA"}},
+    )
+    assert theme_patch.status_code == 200
+
+    public_before_republish = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_before_republish.json()["theme"]["accent_color"] == DEFAULT_THEME["accent_color"]
+
+    preview = client.get(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/preview",
+        headers=headers,
+    )
+    assert preview.status_code == 200
+    assert preview.json()["theme"]["accent_color"] == "#1F3A2D"
+
+    _publish_menu(client, business.id, menu["id"], headers)
+    public_after_republish = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_after_republish.json()["theme"]["accent_color"] == "#1F3A2D"
+
+
+def test_replacing_draft_image_keeps_published_image_alive_until_republish(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "image-snapshot-owner@example.com")
+    business = make_business(
+        db, "Image Snapshot Biz", "image-snapshot-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(client, business.id, menu_id, category_id, headers)
+    assert (
+        client.patch(
+            f"/api/businesses/{business.id}",
+            headers=headers,
+            json={"destination_type": "digital_menu"},
+        ).status_code
+        == 200
+    )
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    first_upload = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload(
+            "rojo.png",
+            _image_bytes(format_name="PNG", color=(255, 0, 0)),
+            "image/png",
+        ),
+    )
+    assert first_upload.status_code == 200
+    _publish_menu(client, business.id, menu_id, headers)
+
+    public_v1 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    image_url_v1 = public_v1.json()["categories"][0]["items"][0]["image_url"]
+    image_v1 = client.get(image_url_v1)
+    assert image_v1.status_code == 200
+    assert _image_center_rgb(image_v1.content)[0] > _image_center_rgb(image_v1.content)[2]
+
+    second_upload = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload(
+            "azul.png",
+            _image_bytes(format_name="PNG", color=(0, 0, 255)),
+            "image/png",
+        ),
+    )
+    assert second_upload.status_code == 200
+
+    still_v1 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert still_v1.json()["categories"][0]["items"][0]["image_url"] == image_url_v1
+    image_v1_still = client.get(image_url_v1)
+    assert image_v1_still.status_code == 200
+    assert _image_center_rgb(image_v1_still.content)[0] > _image_center_rgb(
+        image_v1_still.content
+    )[2]
+
+    _publish_menu(client, business.id, menu_id, headers)
+    public_v2 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    image_url_v2 = public_v2.json()["categories"][0]["items"][0]["image_url"]
+    assert image_url_v2 != image_url_v1
+    image_v2 = client.get(image_url_v2)
+    assert image_v2.status_code == 200
+    assert _image_center_rgb(image_v2.content)[2] > _image_center_rgb(image_v2.content)[0]
+
+
+def test_preview_publish_and_unpublish_respect_plan_membership_and_business_status(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "security-owner@example.com")
+    outsider = make_user(db, "security-outsider@example.com")
+    premium_business = make_business(
+        db, "Secure Premium", "secure-premium", plan_key=BusinessPlanKey.premium
+    )
+    essential_business = make_business(
+        db, "Secure Essential", "secure-essential", plan_key=BusinessPlanKey.essential
+    )
+    add_membership(db, owner, premium_business, MembershipRole.owner)
+    add_membership(db, owner, essential_business, MembershipRole.owner)
+    outsider_business = make_business(
+        db, "Other Tenant", "other-tenant", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, outsider, outsider_business, MembershipRole.owner)
+
+    premium_headers = auth_headers(owner)
+    essential_headers = auth_headers(owner)
+    outsider_headers = auth_headers(outsider)
+
+    premium_menu = client.post(
+        f"/api/businesses/{premium_business.id}/digital-menu",
+        headers=premium_headers,
+        json={"name": "Carta segura"},
+    ).json()
+    category = client.post(
+        f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/categories",
+        headers=premium_headers,
+        json={"name": "Principales"},
+    ).json()
+    assert (
+        client.post(
+            f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/categories/{category['id']}/items",
+            headers=premium_headers,
+            json={"name": "Plato", "price": "1000.00", "currency": "ARS"},
+        ).status_code
+        == 200
+    )
+
+    essential_menu = client.post(
+        f"/api/businesses/{essential_business.id}/digital-menu",
+        headers=essential_headers,
+        json={"name": "Carta esencial"},
+    )
+    assert essential_menu.status_code == 403
+
+    preview_ok = client.get(
+        f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/preview",
+        headers=premium_headers,
+    )
+    assert preview_ok.status_code == 200
+
+    preview_forbidden = client.get(
+        f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/preview",
+        headers=outsider_headers,
+    )
+    assert preview_forbidden.status_code == 403
+
+    publish_ok = client.post(
+        f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/publish",
+        headers=premium_headers,
+    )
+    assert publish_ok.status_code == 200
+
+    premium_business.status = BusinessStatus.suspended
+    db.commit()
+    suspended_publish = client.post(
+        f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/publish",
+        headers=premium_headers,
+    )
+    assert suspended_publish.status_code == 403
+
+    premium_business.status = BusinessStatus.active
+    db.commit()
+    unpublish_ok = client.post(
+        f"/api/businesses/{premium_business.id}/digital-menu/{premium_menu['id']}/unpublish",
+        headers=premium_headers,
+    )
+    assert unpublish_ok.status_code == 200
 
 
 def test_essential_business_cannot_upload_product_images(client, db: Session) -> None:

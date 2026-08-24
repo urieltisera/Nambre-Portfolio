@@ -5,10 +5,11 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageOps, UnidentifiedImageError
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import MenuItem
+from app.models import DigitalMenu, DigitalMenuPublishedSnapshot, MenuCategory, MenuItem
 from app.repositories.digital_menu_repository import get_business_menu_item
 from app.storage.local import LocalStorage
 
@@ -74,9 +75,14 @@ async def upload_menu_item_image(
     previous_key = item.image_key
     previous_url = item.image_url
     previous_updated_at = item.updated_at
+    menu = _get_item_menu(db, item.id)
+    previous_menu_revision = menu.draft_revision if menu is not None else None
+    previous_menu_updated_at = menu.updated_at if menu is not None else None
     item.image_key = next_key
     item.image_url = build_private_menu_item_image_url(business_id, menu_id, item.id)
     item.updated_at = datetime.now(UTC)
+    if menu is not None:
+        _touch_menu_revision(menu)
     try:
         db.flush()
     except Exception:
@@ -84,9 +90,16 @@ async def upload_menu_item_image(
         item.image_key = previous_key
         item.image_url = previous_url
         item.updated_at = previous_updated_at
+        if menu is not None:
+            menu.draft_revision = previous_menu_revision or 0
+            menu.updated_at = previous_menu_updated_at or previous_updated_at
         raise
 
-    if previous_key and previous_key != next_key:
+    if (
+        previous_key
+        and previous_key != next_key
+        and not _is_image_key_referenced_by_snapshot(db, previous_key)
+    ):
         storage.delete(previous_key)
     return item
 
@@ -104,14 +117,43 @@ def delete_menu_item_image(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
 
     previous_key = item.image_key
+    menu = _get_item_menu(db, item.id)
     item.image_key = None
     item.image_url = None
     item.updated_at = datetime.now(UTC)
+    if menu is not None:
+        _touch_menu_revision(menu)
     db.flush()
 
-    if previous_key:
+    if previous_key and not _is_image_key_referenced_by_snapshot(db, previous_key):
         (storage or LocalStorage()).delete(previous_key)
     return item
+
+
+def _get_item_menu(db: Session, item_id: str) -> DigitalMenu | None:
+    return db.scalar(
+        select(DigitalMenu)
+        .join(MenuCategory, MenuCategory.digital_menu_id == DigitalMenu.id)
+        .join(MenuItem, MenuItem.category_id == MenuCategory.id)
+        .where(MenuItem.id == item_id)
+    )
+
+
+def _touch_menu_revision(menu: DigitalMenu) -> None:
+    menu.draft_revision += 1
+    menu.updated_at = datetime.now(UTC)
+
+
+def _is_image_key_referenced_by_snapshot(db: Session, image_key: str) -> bool:
+    pattern = f'%"{image_key}"%'
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(DigitalMenuPublishedSnapshot)
+            .where(cast(DigitalMenuPublishedSnapshot.payload, String).like(pattern))
+        )
+        or 0
+    ) > 0
 
 
 def _process_product_image(content: bytes) -> ProcessedMenuItemImage:

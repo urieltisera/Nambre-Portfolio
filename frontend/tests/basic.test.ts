@@ -71,17 +71,13 @@ describe("frontend smoke", () => {
     await downloadQrAsset("/api/businesses/biz/qr-assets/standard.png", "abc123");
 
     const [requestedUrl, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = new Headers(requestInit.headers);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/businesses/biz/qr-assets/standard.png",
-      {cache: "no-store", headers: {Authorization: "Bearer abc123"}},
-    );
     expect(requestedUrl).toBe("/api/businesses/biz/qr-assets/standard.png");
     expect(requestedUrl).not.toContain("?");
-    expect(requestInit).toEqual({
-      cache: "no-store",
-      headers: {Authorization: "Bearer abc123"},
-    });
+    expect(requestInit.cache).toBe("no-store");
+    expect(requestInit.credentials).toBe("include");
+    expect(headers.get("Authorization")).toBe("Bearer abc123");
     expect(appendChild).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
     expect(remove).toHaveBeenCalled();
@@ -99,18 +95,14 @@ describe("frontend smoke", () => {
 
     const blob = await fetchQrAssetBlob("/api/businesses/biz/qr-assets/branded.png", "abc123");
     const [requestedUrl, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = new Headers(requestInit.headers);
 
     expect(blob).toBeInstanceOf(Blob);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/businesses/biz/qr-assets/branded.png",
-      {cache: "no-store", headers: {Authorization: "Bearer abc123"}},
-    );
     expect(requestedUrl).toBe("/api/businesses/biz/qr-assets/branded.png");
     expect(requestedUrl).not.toContain("?");
-    expect(requestInit).toEqual({
-      cache: "no-store",
-      headers: {Authorization: "Bearer abc123"},
-    });
+    expect(requestInit.cache).toBe("no-store");
+    expect(requestInit.credentials).toBe("include");
+    expect(headers.get("Authorization")).toBe("Bearer abc123");
   });
 
   it("maps upload errors to safe user-facing messages", () => {

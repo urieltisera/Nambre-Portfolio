@@ -1,14 +1,16 @@
 "use client";
 
 import React from "react";
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {AdminPanel} from "@/components/AdminPanel";
 import {BusinessPanel} from "@/components/BusinessPanel";
 import {LoginForm} from "@/components/auth/LoginForm";
 import {Alert} from "@/components/ui/Alert";
 import {AppearanceProvider} from "@/components/ui/AppearanceProvider";
 import {Button} from "@/components/ui/Button";
+import {LoadingState} from "@/components/ui/LoadingState";
 import {
+  ApiError,
   canAccessAdmin,
   currentUser,
   logout,
@@ -21,39 +23,85 @@ export default function Page() {
   const [admin, setAdmin] = useState(false);
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
-  async function handleToken(nextToken: string) {
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const me = await currentUser();
+        if (cancelled) return;
+        setUser(me);
+        setAdmin(me.is_platform_admin);
+        setError("");
+      } catch (err) {
+        if (cancelled) return;
+        setToken(null);
+        setUser(null);
+        setAdmin(false);
+        if (!(err instanceof ApiError && err.status === 401)) {
+          setError("No se pudo restaurar la sesión actual.");
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckingSession(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleToken(nextToken: string | null) {
     setError("");
     setToken(nextToken);
     try {
       const me = await currentUser(nextToken);
       setUser(me);
       setAdmin(me.is_platform_admin);
+      setCheckingSession(false);
     } catch {
       setToken(null);
       setUser(null);
       setAdmin(false);
+      setCheckingSession(false);
       setError("No se pudo cargar el usuario actual.");
     }
   }
 
   async function handleLogout() {
-    if (!token) return;
     setLoggingOut(true);
     try {
       await logout(token);
     } catch {
-      // El backend actual responde 204 sin estado servidor; limpiamos cliente igual.
+      // Si el backend no responde, igualmente limpiamos el shell local.
     } finally {
       setToken(null);
       setUser(null);
       setAdmin(false);
       setError("");
+      setCheckingSession(false);
       setLoggingOut(false);
     }
   }
 
-  if (!token) {
+  if (checkingSession) {
+    return (
+      <AppearanceProvider key="bootstrapping">
+        <main className="page-frame page-frame--narrow">
+          <LoadingState
+            message="Estamos validando tu sesión para evitar interrupciones al refrescar."
+            title="Recuperando acceso"
+          />
+        </main>
+      </AppearanceProvider>
+    );
+  }
+
+  if (!user) {
     return (
       <AppearanceProvider key="guest">
         <LoginForm onToken={handleToken} />

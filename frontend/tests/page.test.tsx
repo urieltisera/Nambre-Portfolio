@@ -3,6 +3,7 @@
 import React from "react";
 import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
+import {ApiError} from "../lib/api";
 import Page from "../app/page";
 
 const mocks = vi.hoisted(() => ({
@@ -45,38 +46,69 @@ afterEach(() => {
 });
 
 describe("Page", () => {
-  it("does not render the Admin tab for a normal owner", async () => {
-    mocks.currentUser.mockResolvedValue({
+  it("restores a valid cookie session without flashing the login", async () => {
+    mocks.currentUser.mockResolvedValueOnce({
       email: "owner@example.com",
       id: "owner-1",
       is_platform_admin: false,
     });
 
     render(<Page />);
-    fireEvent.click(screen.getByRole("button", {name: "Mock login"}));
-
     await waitFor(() => {
-      expect(mocks.currentUser).toHaveBeenCalledWith("owner-token");
+      expect(mocks.currentUser).toHaveBeenCalledWith();
     });
     expect(screen.getByText("Business panel")).toBeTruthy();
+    expect(screen.queryByRole("button", {name: "Mock login"})).toBeNull();
     expect(screen.queryByRole("button", {name: "Admin"})).toBeNull();
   });
 
-  it("calls logout and returns to login after closing the session", async () => {
-    mocks.currentUser.mockResolvedValue({
+  it("shows login after a bootstrap 401", async () => {
+    mocks.currentUser.mockRejectedValueOnce(new ApiError(401, "Not authenticated"));
+
+    render(<Page />);
+
+    await waitFor(() => {
+      expect(mocks.currentUser).toHaveBeenCalledWith();
+    });
+    expect(screen.getByRole("button", {name: "Mock login"})).toBeTruthy();
+    expect(screen.queryByText("Business panel")).toBeNull();
+  });
+
+  it("does not persist bearer tokens in browser storage during login", async () => {
+    const localSetItem = vi.spyOn(Storage.prototype, "setItem");
+    mocks.currentUser.mockRejectedValueOnce(new ApiError(401, "Not authenticated"));
+    mocks.currentUser.mockResolvedValueOnce({
       email: "owner@example.com",
       id: "owner-1",
       is_platform_admin: false,
     });
 
     render(<Page />);
+
+    await screen.findByRole("button", {name: "Mock login"});
     fireEvent.click(screen.getByRole("button", {name: "Mock login"}));
 
+    await screen.findByText("Business panel");
+    expect(mocks.currentUser).toHaveBeenNthCalledWith(2, "owner-token");
+    expect(localSetItem).not.toHaveBeenCalledWith(
+      expect.stringMatching(/token|bearer|session/i),
+      expect.any(String),
+    );
+  });
+
+  it("calls logout and returns to login after closing a cookie-restored session", async () => {
+    mocks.currentUser.mockResolvedValueOnce({
+      email: "owner@example.com",
+      id: "owner-1",
+      is_platform_admin: false,
+    });
+
+    render(<Page />);
     await screen.findByText("Business panel");
     fireEvent.click(screen.getByRole("button", {name: "Mock logout"}));
 
     await waitFor(() => {
-      expect(mocks.logout).toHaveBeenCalledWith("owner-token");
+      expect(mocks.logout).toHaveBeenCalledWith(null);
     });
     await waitFor(() => {
       expect(screen.getByRole("button", {name: "Mock login"})).toBeTruthy();

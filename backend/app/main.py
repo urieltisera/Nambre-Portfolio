@@ -14,7 +14,7 @@ def create_app() -> FastAPI:
             origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
         ],
         allow_origin_regex=settings.cors_origin_regex,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

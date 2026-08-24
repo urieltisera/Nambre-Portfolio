@@ -42,8 +42,8 @@ export function OwnerSettings({
   business: Business | null;
   onLogout: () => Promise<void> | void;
   onNavigateBusiness: () => void;
-  onSessionRefresh?: (token: string) => Promise<void> | void;
-  token: string;
+  onSessionRefresh?: (token: string | null) => Promise<void> | void;
+  token: string | null;
   user: User;
 }) {
   const {resolvedTheme, setTheme, setVisualStyle, theme, visualStyle} = useAppearance();

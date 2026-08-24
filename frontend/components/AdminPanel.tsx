@@ -22,7 +22,7 @@ export function AdminPanel({
   token,
 }: {
   onReturnToOwner?: () => void;
-  token: string;
+  token: string | null;
 }) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [name, setName] = useState("");

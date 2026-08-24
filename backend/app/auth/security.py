@@ -1,16 +1,20 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import bcrypt
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import User, UserSession
+
+SESSION_COOKIE_NAME = "nambre_session"
+SESSION_COOKIE_PATH = "/"
+SESSION_COOKIE_SAMESITE: Literal["lax"] = "lax"
 
 
 @dataclass(frozen=True)
@@ -53,12 +57,38 @@ def create_access_token(user: User, session: UserSession | None = None) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
 
-def get_current_auth(
-    authorization: str | None = Header(default=None), db: Session = Depends(get_db)
-) -> AuthContext:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    token = authorization.removeprefix("Bearer ").strip()
+def session_cookie_secure(settings: Settings | None = None) -> bool:
+    resolved_settings = settings or get_settings()
+    return resolved_settings.environment not in {"local", "test"}
+
+
+def set_session_cookie(
+    response: Response, token: str, settings: Settings | None = None
+) -> None:
+    resolved_settings = settings or get_settings()
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        max_age=resolved_settings.access_token_minutes * 60,
+        path=SESSION_COOKIE_PATH,
+        samesite=SESSION_COOKIE_SAMESITE,
+        secure=session_cookie_secure(resolved_settings),
+    )
+
+
+def clear_session_cookie(response: Response, settings: Settings | None = None) -> None:
+    resolved_settings = settings or get_settings()
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path=SESSION_COOKIE_PATH,
+        httponly=True,
+        samesite=SESSION_COOKIE_SAMESITE,
+        secure=session_cookie_secure(resolved_settings),
+    )
+
+
+def _decode_auth_token(token: str, db: Session) -> AuthContext:
     try:
         payload = jwt.decode(token, get_settings().secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as exc:
@@ -86,6 +116,21 @@ def get_current_auth(
     if session.revoked_at is not None or expires_at <= now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
     return AuthContext(user=user, session=session)
+
+
+def get_current_auth(
+    authorization: str | None = Header(default=None),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+) -> AuthContext:
+    token = (
+        authorization.removeprefix("Bearer ").strip()
+        if authorization and authorization.startswith("Bearer ")
+        else session_cookie
+    )
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return _decode_auth_token(token, db)
 
 
 def get_current_user(auth: AuthContext = Depends(get_current_auth)) -> User:

@@ -65,11 +65,11 @@ export function BusinessPanel({
   onSessionRefresh,
   user = null,
 }: {
-  token: string;
+  token: string | null;
   isPlatformAdmin?: boolean;
   onLogout?: () => Promise<void> | void;
   onOpenAdmin?: () => void;
-  onSessionRefresh?: (token: string) => Promise<void> | void;
+  onSessionRefresh?: (token: string | null) => Promise<void> | void;
   user?: User | null;
 }) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -966,15 +966,15 @@ export function groupQrAssets(qr: QR[]): QrAssetGroup[] {
 type QrSectionProps = {
   canGenerate: boolean;
   publicCode: string | null;
-  token: string;
+  token: string | null;
   groups: QrAssetGroup[];
   generatingQr: boolean;
   downloadError: string;
   onGenerateQr: () => Promise<void>;
   onDownloadError: (message: string) => void;
   previewVersion: number;
-  loadPreview?: (path: string, token: string) => Promise<Blob>;
-  downloadAsset?: (path: string, token: string) => Promise<void>;
+  loadPreview?: (path: string, token?: string | null) => Promise<Blob>;
+  downloadAsset?: (path: string, token?: string | null) => Promise<void>;
 };
 
 export function QrSection({
@@ -1026,11 +1026,11 @@ export function QrSection({
 
 type QrPreviewCardProps = {
   group: QrAssetGroup;
-  token: string;
+  token: string | null;
   onDownloadError: (message: string) => void;
   previewVersion: number;
-  loadPreview?: (path: string, token: string) => Promise<Blob>;
-  downloadAsset?: (path: string, token: string) => Promise<void>;
+  loadPreview?: (path: string, token?: string | null) => Promise<Blob>;
+  downloadAsset?: (path: string, token?: string | null) => Promise<void>;
 };
 
 export function QrPreviewCard({

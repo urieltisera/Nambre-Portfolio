@@ -110,13 +110,26 @@ export class LegalAcceptanceRequiredError extends Error {
   }
 }
 
-export async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+function buildAuthHeaders(
+  headers?: HeadersInit,
+  token?: string | null,
+): Headers {
+  const nextHeaders = new Headers(headers ?? undefined);
+  if (token) {
+    nextHeaders.set("Authorization", `Bearer ${token}`);
+  }
+  return nextHeaders;
+}
+
+export async function request<T>(
+  path: string,
+  token?: string | null,
+  init: RequestInit = {},
+): Promise<T> {
   const response = await fetch(`${API}${path}`, {
     ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: "include",
+    headers: buildAuthHeaders(init.headers, token),
   });
   if (!response.ok) {
     throw new ApiError(response.status, await readErrorDetail(response));
@@ -130,6 +143,7 @@ export async function login(
   options?: {acceptLegal?: boolean},
 ): Promise<string> {
   const response = await fetch(`${API}/auth/login`, {
+    credentials: "include",
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({accept_legal: options?.acceptLegal ?? false, email, password}),
@@ -156,15 +170,17 @@ export async function login(
   return data.access_token;
 }
 
-export async function logout(token: string): Promise<void> {
+export async function logout(token?: string | null): Promise<void> {
   await fetch(`${API}/auth/logout`, {
-    headers: {Authorization: `Bearer ${token}`},
+    credentials: "include",
+    headers: buildAuthHeaders(undefined, token),
     method: "POST",
   });
 }
 
 export async function requestPasswordReset(email: string): Promise<string> {
   const response = await fetch(`${API}/auth/password-reset/request`, {
+    credentials: "include",
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({email}),
@@ -178,6 +194,7 @@ export async function requestPasswordReset(email: string): Promise<string> {
 
 export async function confirmPasswordReset(token: string, newPassword: string): Promise<string> {
   const response = await fetch(`${API}/auth/password-reset/confirm`, {
+    credentials: "include",
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({token, new_password: newPassword}),
@@ -197,16 +214,14 @@ export async function confirmPasswordReset(token: string, newPassword: string): 
 }
 
 export async function changePassword(
-  token: string,
+  token: string | null | undefined,
   currentPassword: string,
   newPassword: string,
 ): Promise<string> {
   const response = await fetch(`${API}/auth/change-password`, {
+    credentials: "include",
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers: buildAuthHeaders({"Content-Type": "application/json"}, token),
     body: JSON.stringify({
       current_password: currentPassword,
       new_password: newPassword,
@@ -258,7 +273,10 @@ export function adminBusinessActions(status: Business["status"]): BusinessStatus
   return [{label: "Reactivar", nextStatus: "active"}];
 }
 
-export async function listBusinesses(token: string, isPlatformAdmin = false): Promise<Business[]> {
+export async function listBusinesses(
+  token?: string | null,
+  isPlatformAdmin = false,
+): Promise<Business[]> {
   return request<Business[]>(isPlatformAdmin ? "/admin/businesses" : "/api/me/businesses", token);
 }
 
@@ -277,15 +295,15 @@ export function slugifyBusinessName(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export async function currentUser(token: string): Promise<User> {
+export async function currentUser(token?: string | null): Promise<User> {
   return request<User>("/api/me", token);
 }
 
-export async function currentLegalStatus(token: string): Promise<LegalStatus> {
+export async function currentLegalStatus(token?: string | null): Promise<LegalStatus> {
   return request<LegalStatus>("/api/legal/status", token);
 }
 
-export async function acceptCurrentLegalDocuments(token: string): Promise<LegalStatus> {
+export async function acceptCurrentLegalDocuments(token?: string | null): Promise<LegalStatus> {
   return request<LegalStatus>("/api/legal/accept", token, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
@@ -293,12 +311,11 @@ export async function acceptCurrentLegalDocuments(token: string): Promise<LegalS
   });
 }
 
-export async function fetchQrAssetBlob(path: string, token: string): Promise<Blob> {
+export async function fetchQrAssetBlob(path: string, token?: string | null): Promise<Blob> {
   const response = await fetch(assetUrl(path), {
     cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: "include",
+    headers: buildAuthHeaders(undefined, token),
   });
   if (!response.ok) {
     throw new ApiError(response.status, await readErrorDetail(response));
@@ -306,7 +323,7 @@ export async function fetchQrAssetBlob(path: string, token: string): Promise<Blo
   return response.blob();
 }
 
-export async function downloadQrAsset(path: string, token: string): Promise<void> {
+export async function downloadQrAsset(path: string, token?: string | null): Promise<void> {
   const blob = await fetchQrAssetBlob(path, token);
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");

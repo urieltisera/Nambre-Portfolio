@@ -31,11 +31,13 @@ from app.auth.permissions import (
 )
 from app.auth.security import (
     AuthContext,
+    clear_session_cookie,
     create_access_token,
     create_user_session,
     get_current_auth,
     get_current_user,
     hash_password,
+    set_session_cookie,
     verify_password,
 )
 from app.config import get_settings
@@ -111,7 +113,12 @@ def health() -> dict[str, str]:
 
 
 @router.post("/auth/login", response_model=TokenOut)
-def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)) -> TokenOut:
+def login(
+    payload: LoginIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenOut:
     _check_login_rate(payload.email, request)
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if (
@@ -148,7 +155,9 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)) -> 
     session = create_user_session(db, user)
     record_audit_event(db, event_type="auth.login_succeeded", actor_user_id=user.id)
     db.commit()
-    return TokenOut(access_token=create_access_token(user, session))
+    access_token = create_access_token(user, session)
+    set_session_cookie(response, access_token)
+    return TokenOut(access_token=access_token)
 
 
 @router.post("/auth/logout", status_code=204)
@@ -166,12 +175,15 @@ def logout(
             target_id=auth.session.id,
         )
         db.commit()
-    return Response(status_code=204)
+    response = Response(status_code=204)
+    clear_session_cookie(response)
+    return response
 
 
 @router.post("/auth/change-password", response_model=TokenOut)
 def authenticated_change_password(
     payload: ChangePasswordIn,
+    response: Response,
     auth: AuthContext = Depends(get_current_auth),
     db: Session = Depends(get_db),
 ) -> TokenOut:
@@ -197,6 +209,7 @@ def authenticated_change_password(
         target_id=auth.user.id,
     )
     db.commit()
+    set_session_cookie(response, access_token)
     return TokenOut(access_token=access_token)
 
 

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.security import SESSION_COOKIE_NAME, set_session_cookie
 from app.config import Settings
 from app.models import (
     AcceptanceMethod,
@@ -141,6 +142,148 @@ def test_logout_revokes_login_session_and_audits_it(client, db: Session) -> None
     event_types = [event.event_type for event in audit_events]
     assert event_types[-2:] == ["auth.login_succeeded", "auth.logout"]
     assert event_types.count("legal.accepted") == 5
+
+
+def test_login_sets_http_only_session_cookie(client, db: Session) -> None:
+    make_user(db, "cookie-login@example.com", password="cookie-pass-123")
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "cookie-login@example.com",
+            "password": "cookie-pass-123",
+        },
+    )
+
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie")
+    assert set_cookie is not None
+    assert f"{SESSION_COOKIE_NAME}=" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=lax" in set_cookie
+    assert "Path=/" in set_cookie
+    assert "Max-Age=28800" in set_cookie
+
+
+def test_production_session_cookie_is_secure() -> None:
+    from fastapi import Response
+
+    response = Response()
+    token = "signed-token"
+    settings = Settings(
+        environment="production",
+        secret_key="production-secret-key-with-sufficient-length",
+    )
+
+    set_session_cookie(response, token, settings)
+
+    set_cookie = response.headers.get("set-cookie")
+    assert set_cookie is not None
+    assert f"{SESSION_COOKIE_NAME}={token}" in set_cookie
+    assert "Secure" in set_cookie
+
+
+def test_me_accepts_cookie_without_authorization_header(client, db: Session) -> None:
+    make_user(db, "cookie-me@example.com", password="cookie-me-pass-123")
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "cookie-me@example.com",
+            "password": "cookie-me-pass-123",
+        },
+    )
+    assert login.status_code == 200
+
+    me = client.get("/api/me")
+    assert me.status_code == 200
+    assert me.json()["email"] == "cookie-me@example.com"
+
+
+def test_bearer_keeps_priority_over_cookie(client, db: Session) -> None:
+    cookie_user = make_user(db, "cookie-priority@example.com", password="cookie-pass-123")
+    bearer_user = make_user(db, "bearer-priority@example.com", password="bearer-pass-123")
+
+    cookie_login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "cookie-priority@example.com",
+            "password": "cookie-pass-123",
+        },
+    )
+    assert cookie_login.status_code == 200
+
+    bearer_login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "bearer-priority@example.com",
+            "password": "bearer-pass-123",
+        },
+    )
+    assert bearer_login.status_code == 200
+
+    me = client.get(
+        "/api/me",
+        headers={"Authorization": f"Bearer {bearer_login.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["email"] == bearer_user.email
+    assert me.json()["email"] != cookie_user.email
+
+
+def test_logout_via_cookie_revokes_session_and_clears_cookie(client, db: Session) -> None:
+    user = make_user(db, "cookie-logout@example.com", password="cookie-logout-pass-123")
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "cookie-logout@example.com",
+            "password": "cookie-logout-pass-123",
+        },
+    )
+    assert login.status_code == 200
+
+    logout = client.post("/auth/logout")
+    assert logout.status_code == 204
+    cleared_cookie = logout.headers.get("set-cookie")
+    assert cleared_cookie is not None
+    assert f"{SESSION_COOKIE_NAME}=" in cleared_cookie
+    assert "Path=/" in cleared_cookie
+    assert "Max-Age=0" in cleared_cookie
+
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    assert session is not None
+    assert session.revoked_at is not None
+    assert session.revoke_reason == "logout"
+
+
+def test_revoked_cookie_session_stops_working(client, db: Session) -> None:
+    user = make_user(db, "cookie-revoked@example.com", password="cookie-revoked-pass-123")
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "accept_legal": True,
+            "email": "cookie-revoked@example.com",
+            "password": "cookie-revoked-pass-123",
+        },
+    )
+    assert login.status_code == 200
+
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    assert session is not None
+    session.revoked_at = session.issued_at
+    session.revoke_reason = "security-review"
+    db.commit()
+
+    reused = client.get("/api/me")
+    assert reused.status_code == 401
+    assert reused.json()["detail"] == "Session expired"
 
 
 def test_revoked_session_cannot_be_reused(client, db: Session) -> None:
@@ -507,6 +650,9 @@ def test_change_password_rotates_sessions_and_rejects_old_password(client, db: S
         json={"current_password": "old-pass-123", "new_password": "new-pass-123"},
     )
     assert changed.status_code == 200
+    changed_cookie = changed.headers.get("set-cookie")
+    assert changed_cookie is not None
+    assert f"{SESSION_COOKIE_NAME}=" in changed_cookie
     new_headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
 
     assert client.get("/api/me", headers=old_headers_a).status_code == 401

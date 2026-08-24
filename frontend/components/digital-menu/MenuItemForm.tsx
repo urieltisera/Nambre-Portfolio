@@ -1,18 +1,24 @@
 "use client";
 
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import {Button} from "@/components/ui/Button";
 import {Input} from "@/components/ui/Input";
 import {formatArsPrice} from "@/lib/money";
 
+const ACCEPTED_PRODUCT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export type MenuItemFormValues = {
   currency: string;
   description: string;
+  imageFile: File | null;
+  image_url: string | null;
   is_available: boolean;
   is_featured: boolean;
   is_visible: boolean;
   name: string;
   price: string;
+  removeImage: boolean;
 };
 
 export function normalizePriceInput(value: string): string | null {
@@ -62,25 +68,94 @@ export function MenuItemForm({
   submitLabel: string;
   title: string;
 }) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState(initialValues?.name ?? "");
   const [description, setDescription] = useState(initialValues?.description ?? "");
   const [price, setPrice] = useState(initialValues?.price ?? "");
   const [currency, setCurrency] = useState(initialValues?.currency ?? "ARS");
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(initialValues?.image_url ?? null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [isVisible, setIsVisible] = useState(initialValues?.is_visible ?? true);
   const [isAvailable, setIsAvailable] = useState(initialValues?.is_available ?? true);
   const [isFeatured, setIsFeatured] = useState(initialValues?.is_featured ?? false);
   const [priceError, setPriceError] = useState("");
+  const [imageError, setImageError] = useState("");
 
   useEffect(() => {
     setName(initialValues?.name ?? "");
     setDescription(initialValues?.description ?? "");
     setPrice(initialValues?.price ?? "");
     setCurrency(initialValues?.currency ?? "ARS");
+    setCurrentImageUrl(initialValues?.image_url ?? null);
+    setLocalPreviewUrl(null);
+    setImageFile(null);
+    setRemoveImage(false);
     setIsVisible(initialValues?.is_visible ?? true);
     setIsAvailable(initialValues?.is_available ?? true);
     setIsFeatured(initialValues?.is_featured ?? false);
     setPriceError("");
+    setImageError("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }, [initialValues]);
+
+  useEffect(
+    () => () => {
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(localPreviewUrl);
+      }
+    },
+    [localPreviewUrl],
+  );
+
+  function handlePickImage() {
+    fileInputRef.current?.click();
+  }
+
+  function handleRestoreImage() {
+    setRemoveImage(false);
+    setImageError("");
+  }
+
+  function handleRemoveImage() {
+    if (localPreviewUrl) {
+      URL.revokeObjectURL(localPreviewUrl);
+    }
+    setLocalPreviewUrl(null);
+    setImageFile(null);
+    setRemoveImage(Boolean(currentImageUrl));
+    setImageError("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null;
+    if (nextFile === null) {
+      return;
+    }
+    if (!ACCEPTED_PRODUCT_IMAGE_TYPES.includes(nextFile.type)) {
+      setImageError("Formato no compatible. Usá JPG, PNG o WebP.");
+      event.target.value = "";
+      return;
+    }
+    if (nextFile.size > MAX_PRODUCT_IMAGE_BYTES) {
+      setImageError("La imagen supera el tamaño permitido de 10 MB.");
+      event.target.value = "";
+      return;
+    }
+    if (localPreviewUrl) {
+      URL.revokeObjectURL(localPreviewUrl);
+    }
+    setLocalPreviewUrl(URL.createObjectURL(nextFile));
+    setImageFile(nextFile);
+    setRemoveImage(false);
+    setImageError("");
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,15 +168,20 @@ export function MenuItemForm({
     await onSubmit({
       currency: currency.trim().toUpperCase() || "ARS",
       description,
+      imageFile,
+      image_url: currentImageUrl,
       is_available: isAvailable,
       is_featured: isFeatured,
       is_visible: isVisible,
       name,
       price: normalizedPrice,
+      removeImage,
     });
   }
 
   const normalizedPreview = normalizePriceInput(price);
+  const previewImageUrl = removeImage ? null : localPreviewUrl ?? currentImageUrl;
+  const hasPendingImageChange = imageFile !== null || removeImage;
 
   return (
     <form className="panel-stack" onSubmit={(event) => void handleSubmit(event)}>
@@ -140,6 +220,51 @@ export function MenuItemForm({
           onChange={(event) => setCurrency(event.target.value.toUpperCase())}
           value={currency}
         />
+      </div>
+      <div className="digital-menu-image-field">
+        <div className="digital-menu-image-field__header">
+          <div>
+            <strong>Imagen del producto</strong>
+            <p className="muted">Opcional. JPG, PNG o WebP hasta 10 MB.</p>
+          </div>
+          {hasPendingImageChange ? <span className="muted">Se guardará al confirmar.</span> : null}
+        </div>
+        <div className="digital-menu-image-field__preview">
+          {previewImageUrl ? (
+            <img
+              alt={name.trim() ? `Preview de ${name.trim()}` : "Preview de imagen del producto"}
+              className="digital-menu-image-field__image"
+              src={previewImageUrl}
+            />
+          ) : (
+            <div className="digital-menu-image-field__empty">Sin foto cargada</div>
+          )}
+        </div>
+        <input
+          accept={ACCEPTED_PRODUCT_IMAGE_TYPES.join(",")}
+          aria-label="Imagen del producto"
+          className="sr-only"
+          disabled={busy}
+          onChange={handleImageChange}
+          ref={fileInputRef}
+          type="file"
+        />
+        <div className="digital-menu-image-field__actions">
+          <Button disabled={busy} onClick={handlePickImage} type="button" variant="secondary">
+            {previewImageUrl ? "Cambiar imagen" : "Subir imagen"}
+          </Button>
+          {previewImageUrl ? (
+            <Button disabled={busy} onClick={handleRemoveImage} type="button" variant="ghost">
+              Eliminar
+            </Button>
+          ) : null}
+          {removeImage && currentImageUrl ? (
+            <Button disabled={busy} onClick={handleRestoreImage} type="button" variant="ghost">
+              Restaurar imagen
+            </Button>
+          ) : null}
+        </div>
+        {imageError ? <span className="field__hint">{imageError}</span> : null}
       </div>
       <div className="digital-menu-checklist">
         <label className="login-legal__checkbox">

@@ -262,7 +262,6 @@ class MenuItemCreateIn(BaseModel):
     description: str | None = None
     price: Decimal
     currency: str = "ARS"
-    image_url: str | None = None
     position: int = Field(default=0, ge=0)
     is_visible: bool = True
     is_available: bool = True
@@ -276,7 +275,7 @@ class MenuItemCreateIn(BaseModel):
             raise ValueError("Item name is required")
         return stripped
 
-    @field_validator("description", "image_url")
+    @field_validator("description")
     @classmethod
     def validate_optional_text_fields(cls, value: str | None) -> str | None:
         return _strip_optional_text(value)
@@ -305,7 +304,6 @@ class MenuItemPatchIn(BaseModel):
     description: str | None = None
     price: Decimal | None = None
     currency: str | None = None
-    image_url: str | None = None
     position: int | None = Field(default=None, ge=0)
     is_visible: bool | None = None
     is_available: bool | None = None
@@ -321,7 +319,7 @@ class MenuItemPatchIn(BaseModel):
             raise ValueError("Item name is required")
         return stripped
 
-    @field_validator("description", "image_url")
+    @field_validator("description")
     @classmethod
     def validate_optional_item_text_fields(cls, value: str | None) -> str | None:
         return _strip_optional_text(value)

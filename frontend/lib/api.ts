@@ -135,7 +135,6 @@ export type CreateMenuItemPayload = {
   description?: string | null;
   price: string;
   currency?: string;
-  image_url?: string | null;
   position?: number;
   is_visible?: boolean;
   is_available?: boolean;
@@ -648,6 +647,43 @@ export async function deleteMenuItem(
   );
 }
 
+export async function uploadMenuItemImage(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  itemId: string,
+  file: File,
+): Promise<MenuItem> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(
+    `${API}/api/businesses/${businessId}/digital-menu/${menuId}/items/${itemId}/image`,
+    {
+      body,
+      credentials: "include",
+      headers: buildAuthHeaders(undefined, token),
+      method: "POST",
+    },
+  );
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorDetail(response));
+  }
+  return response.json() as Promise<MenuItem>;
+}
+
+export async function deleteMenuItemImage(
+  token: string | null | undefined,
+  businessId: string,
+  menuId: string,
+  itemId: string,
+): Promise<MenuItem> {
+  return request<MenuItem>(
+    `/api/businesses/${businessId}/digital-menu/${menuId}/items/${itemId}/image`,
+    token,
+    {method: "DELETE"},
+  );
+}
+
 export function formatPeakHour(hour: number | null): string {
   if (hour === null) return "—";
   return `${hour.toString().padStart(2, "0")}:00`;
@@ -723,6 +759,44 @@ export function uploadErrorMessage(kind: "menu" | "logo", error: unknown): strin
     }
   }
   return `Ocurrió un error inesperado al guardar ${noun}.`;
+}
+
+export function productImageErrorMessage(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "No pudimos subir la foto. Revisá tu conexión e intentá nuevamente.";
+  }
+  if (error instanceof ApiError) {
+    if (error.status === 400 || error.status === 413) {
+      if (error.detail === "Only JPEG, PNG, and WebP product images are allowed") {
+        return "Formato no compatible. Usá JPG, PNG o WebP.";
+      }
+      if (error.detail === "Product image too large") {
+        return "La imagen supera el tamaño permitido de 10 MB.";
+      }
+      if (error.detail === "Image file is empty") {
+        return "El archivo de imagen está vacío.";
+      }
+      if (error.detail === "Uploaded file is not a valid product image") {
+        return "No pudimos procesar la imagen.";
+      }
+      if (error.detail === "Product image dimensions are too large") {
+        return "La imagen tiene dimensiones demasiado grandes para procesarla.";
+      }
+    }
+    if (error.status === 403) {
+      if (error.detail === "Feature not enabled: digital_menu") {
+        return "Tu plan actual no permite cargar fotos de productos.";
+      }
+      if (error.detail === "Business is suspended") {
+        return "Este negocio está suspendido. Reactivalo desde Admin para volver a operar.";
+      }
+      return "No tenés permisos para modificar la foto de este producto.";
+    }
+    if (error.status === 404) {
+      return "El producto ya no está disponible.";
+    }
+  }
+  return "No pudimos subir la foto. Intentá nuevamente.";
 }
 
 export function createBusinessErrorMessage(error: unknown): string {

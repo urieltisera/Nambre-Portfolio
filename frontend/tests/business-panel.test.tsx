@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createDigitalMenu: vi.fn(),
   createMenuCategory: vi.fn(),
   createMenuItem: vi.fn(),
+  deleteMenuItemImage: vi.fn(),
   deleteMenuCategory: vi.fn(),
   deleteMenuItem: vi.fn<
     (_token: string | null | undefined, _businessId: string, _menuId: string, itemId: string) => Promise<void>
@@ -41,6 +42,7 @@ const mocks = vi.hoisted(() => ({
       }),
   ),
   updateMenuItem: vi.fn(),
+  uploadMenuItemImage: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -50,6 +52,7 @@ vi.mock("@/lib/api", async () => {
     createDigitalMenu: mocks.createDigitalMenu,
     createMenuCategory: mocks.createMenuCategory,
     createMenuItem: mocks.createMenuItem,
+    deleteMenuItemImage: mocks.deleteMenuItemImage,
     deleteMenuCategory: mocks.deleteMenuCategory,
     deleteMenuItem: mocks.deleteMenuItem,
     downloadQrAsset: mocks.downloadQrAsset,
@@ -62,6 +65,7 @@ vi.mock("@/lib/api", async () => {
     updateMenuCategory: mocks.updateMenuCategory,
     updateBusinessDestination: mocks.updateBusinessDestination,
     updateMenuItem: mocks.updateMenuItem,
+    uploadMenuItemImage: mocks.uploadMenuItemImage,
   };
 });
 
@@ -70,6 +74,7 @@ afterEach(() => {
   mocks.createDigitalMenu.mockReset();
   mocks.createMenuCategory.mockReset();
   mocks.createMenuItem.mockReset();
+  mocks.deleteMenuItemImage.mockReset();
   mocks.deleteMenuCategory.mockReset();
   mocks.deleteMenuItem.mockClear();
   mocks.downloadQrAsset.mockClear();
@@ -82,6 +87,7 @@ afterEach(() => {
   mocks.updateMenuCategory.mockReset();
   mocks.updateBusinessDestination.mockClear();
   mocks.updateMenuItem.mockReset();
+  mocks.uploadMenuItemImage.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -1222,6 +1228,207 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", {name: "Crear producto"}).textContent).toBe("Crear producto"),
     );
+  }, 15000);
+
+  it("shows product image controls, previews, uploads, replaces and deletes images", async () => {
+    const createObjectURL = vi.fn((file: File) => `blob:${file.name}`);
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL,
+        revokeObjectURL,
+      }),
+    );
+
+    const business: Business = {
+      destination_type: "digital_menu",
+      external_url: null,
+      features: {digital_menu: true},
+      id: "biz-dm-images",
+      logo_url: null,
+      name: "Carta Fotos",
+      plan_key: "premium",
+      slug: "carta-fotos",
+      status: "active",
+    };
+    const menu: DigitalMenu = {
+      business_id: business.id,
+      created_at: "2026-08-24T10:00:00Z",
+      id: "dm-images",
+      is_published: false,
+      name: "Carta Fotos",
+      status: "draft",
+      template_key: "modern",
+      updated_at: "2026-08-24T10:00:00Z",
+    };
+    const categories: MenuCategory[] = [
+      {
+        created_at: "2026-08-24T10:00:00Z",
+        description: null,
+        digital_menu_id: menu.id,
+        id: "cat-images",
+        is_visible: true,
+        name: "Especiales",
+        position: 0,
+        updated_at: "2026-08-24T10:00:00Z",
+      },
+    ];
+    let items: MenuItem[] = [];
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-dm-images") return business;
+      if (path === "/api/businesses/biz-dm-images/menu") {
+        return {current: null, public_code: "images-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-dm-images/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-dm-images/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-dm-images/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    mocks.fetchDigitalMenu.mockResolvedValue(menu);
+    mocks.listMenuCategories.mockResolvedValue(categories);
+    mocks.listMenuItems.mockImplementation(async () => [...items].sort((a, b) => a.position - b.position));
+    mocks.createMenuItem.mockImplementation(async (_token, _businessId, _menuId, categoryId, payload) => {
+      const created: MenuItem = {
+        category_id: categoryId,
+        created_at: "2026-08-24T10:02:00Z",
+        currency: payload.currency ?? "ARS",
+        description: payload.description ?? null,
+        id: `item-${items.length + 1}`,
+        image_url: null,
+        is_available: payload.is_available ?? true,
+        is_featured: payload.is_featured ?? false,
+        is_visible: payload.is_visible ?? true,
+        name: payload.name,
+        position: payload.position ?? items.length,
+        price: payload.price,
+        updated_at: "2026-08-24T10:02:00Z",
+      };
+      items = [...items, created];
+      return created;
+    });
+    mocks.updateMenuItem.mockImplementation(async (_token, _businessId, _menuId, itemId, payload) => {
+      items = items.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              description: payload.description ?? item.description,
+              is_available: payload.is_available ?? item.is_available,
+              is_featured: payload.is_featured ?? item.is_featured,
+              is_visible: payload.is_visible ?? item.is_visible,
+              name: payload.name ?? item.name,
+              position: payload.position ?? item.position,
+              price: payload.price ?? item.price,
+            }
+          : item,
+      );
+      return items.find((item) => item.id === itemId)!;
+    });
+    const uploadControl: {release: null | (() => void)} = {release: null};
+    mocks.uploadMenuItemImage.mockImplementation(
+      async (_token, _businessId, _menuId, itemId, file: File) =>
+        await new Promise<MenuItem>((resolve) => {
+          uploadControl.release = () => {
+            items = items.map((item) =>
+              item.id === itemId
+                ? {
+                    ...item,
+                    image_url: `/media/menu-items/${itemId}/${file.name.replace(/\.[^.]+$/, "")}.webp`,
+                  }
+                : item,
+            );
+            resolve(items.find((item) => item.id === itemId)!);
+          };
+        }),
+    );
+    mocks.deleteMenuItemImage.mockImplementation(async (_token, _businessId, _menuId, itemId) => {
+      items = items.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              image_url: null,
+            }
+          : item,
+      );
+      return items.find((item) => item.id === itemId)!;
+    });
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByText("Hola, Carta Fotos 👋");
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    await screen.findByText("Especiales");
+
+    fireEvent.click(screen.getAllByRole("button", {name: /Agregar producto/i})[0]);
+    await screen.findByRole("heading", {name: "Nuevo producto"});
+    expect(screen.getByText("Imagen del producto")).toBeTruthy();
+    expect(screen.getByText("Sin foto cargada")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Imagen del producto"), {
+      target: {files: [new File(["bad"], "bad.txt", {type: "text/plain"})]},
+    });
+    expect(screen.getByText("Formato no compatible. Usá JPG, PNG o WebP.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Imagen del producto"), {
+      target: {files: [new File(["photo"], "burger.jpg", {type: "image/jpeg"})]},
+    });
+    expect(screen.getByAltText("Preview de imagen del producto")).toBeTruthy();
+    expect(screen.getByText("Se guardará al confirmar.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Burger Melt"}});
+    fireEvent.change(screen.getByRole("textbox", {name: /Precio/i}), {target: {value: "14500"}});
+    fireEvent.click(screen.getByRole("button", {name: "Crear producto"}));
+
+    await waitFor(() => expect(mocks.createMenuItem).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.uploadMenuItemImage).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", {name: "Guardando..."}).hasAttribute("disabled")).toBe(true);
+    if (uploadControl.release === null) {
+      throw new Error("Expected pending upload");
+    }
+    uploadControl.release();
+
+    await screen.findByText("Producto creado correctamente.");
+    expect(await screen.findByText("Burger Melt")).toBeTruthy();
+    expect(await screen.findByText("Con foto")).toBeTruthy();
+
+    const createdRow = screen.getByText("Burger Melt").closest(".digital-menu-item-row");
+    expect(createdRow).toBeTruthy();
+    fireEvent.click(within(createdRow as HTMLElement).getByRole("button", {name: /Editar/i}));
+    await screen.findByRole("heading", {name: "Editar producto"});
+    expect(screen.getByAltText("Preview de Burger Melt")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Imagen del producto"), {
+      target: {files: [new File(["photo-2"], "burger-2.png", {type: "image/png"})]},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Guardar producto"}));
+    await waitFor(() => expect(mocks.uploadMenuItemImage).toHaveBeenCalledTimes(2));
+    if (uploadControl.release === null) {
+      throw new Error("Expected pending replacement upload");
+    }
+    uploadControl.release();
+    await screen.findByText("Producto guardado correctamente.");
+
+    const updatedRow = screen.getByText("Burger Melt").closest(".digital-menu-item-row");
+    expect(updatedRow).toBeTruthy();
+    fireEvent.click(within(updatedRow as HTMLElement).getByRole("button", {name: /Editar/i}));
+    await screen.findByRole("heading", {name: "Editar producto"});
+    const editForm = screen.getByRole("heading", {name: "Editar producto"}).closest("form");
+    expect(editForm).toBeTruthy();
+    fireEvent.click(within(editForm as HTMLElement).getByRole("button", {name: "Eliminar"}));
+    expect(screen.getByText("Sin foto cargada")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Guardar producto"}));
+    await waitFor(() => expect(mocks.deleteMenuItemImage).toHaveBeenCalledTimes(1));
+    await screen.findByText("Producto guardado correctamente.");
+    await waitFor(() => {
+      expect(screen.queryByText("Con foto")).toBeNull();
+    });
+
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalled();
   }, 15000);
 
   it("shows Carta Nambre locked for Essential and does not call digital menu APIs", async () => {

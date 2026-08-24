@@ -1,6 +1,8 @@
 from decimal import Decimal
 from io import BytesIO
 
+import pytest
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,7 +12,9 @@ from app.models import (
     DestinationType,
     DynamicLink,
     MembershipRole,
+    MenuItem,
 )
+from app.storage.local import LocalStorage
 from tests.conftest import add_membership, auth_headers, make_business, make_user
 
 
@@ -34,6 +38,51 @@ def _create_menu_with_category(
 
 def _pdf_upload() -> dict[str, tuple[str, BytesIO, str]]:
     return {"file": ("menu.pdf", BytesIO(b"%PDF-1.4\n%downgrade\n%%EOF\n"), "application/pdf")}
+
+
+def _image_upload(
+    filename: str,
+    content: bytes,
+    content_type: str,
+) -> dict[str, tuple[str, BytesIO, str]]:
+    return {"file": (filename, BytesIO(content), content_type)}
+
+
+def _image_bytes(
+    *,
+    format_name: str,
+    size: tuple[int, int] = (1500, 900),
+    color: tuple[int, int, int] = (210, 90, 45),
+    with_exif_orientation: bool = False,
+) -> bytes:
+    image = Image.new("RGB", size, color)
+    output = BytesIO()
+    save_kwargs: dict[str, object] = {"format": format_name}
+    if with_exif_orientation:
+        exif = Image.Exif()
+        exif[274] = 6
+        save_kwargs["exif"] = exif
+    image.save(output, **save_kwargs)
+    return output.getvalue()
+
+
+def _create_menu_item(
+    client,
+    business_id: str,
+    menu_id: str,
+    category_id: str,
+    headers: dict[str, str],
+    *,
+    name: str = "Producto",
+    price: str = "1500.00",
+) -> dict[str, object]:
+    response = client.post(
+        f"/api/businesses/{business_id}/digital-menu/{menu_id}/categories/{category_id}/items",
+        headers=headers,
+        json={"name": name, "price": price, "currency": "ARS"},
+    )
+    assert response.status_code == 200
+    return response.json()
 
 
 def test_owner_can_create_and_read_digital_menu(client, db: Session) -> None:
@@ -545,6 +594,277 @@ def test_public_digital_menu_page_returns_safe_unavailable_message_when_menu_can
     response = client.get(f"/api/public/digital-menus/{link.public_code}")
     assert response.status_code == 403
     assert response.text == "Este menú no se encuentra disponible actualmente."
+
+
+def test_premium_business_can_upload_jpeg_png_and_webp_product_images(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "item-image-owner@example.com")
+    business = make_business(
+        db, "Item Image Biz", "item-image-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    formats = [
+        ("producto.jpg", "image/jpeg", _image_bytes(format_name="JPEG")),
+        ("producto.png", "image/png", _image_bytes(format_name="PNG")),
+        ("producto.webp", "image/webp", _image_bytes(format_name="WEBP")),
+    ]
+    for filename, content_type, content in formats:
+        response = client.post(
+            f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+            headers=headers,
+            files=_image_upload(filename, content, content_type),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["image_url"] is not None
+        assert body["image_url"] == (
+            f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image"
+        )
+
+        persisted = db.get(MenuItem, item["id"])
+        assert persisted is not None
+        assert persisted.image_key is not None
+        with Image.open(LocalStorage().open(persisted.image_key)) as stored:
+            assert stored.format == "WEBP"
+            assert max(stored.width, stored.height) <= 1200
+
+
+def test_essential_business_cannot_upload_product_images(client, db: Session) -> None:
+    owner = make_user(db, "essential-item-image-owner@example.com")
+    business = make_business(db, "Essential Image Biz", "essential-image-biz")
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    premium_source = make_business(
+        db, "Premium Image Source", "premium-image-source", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, premium_source, MembershipRole.owner)
+    menu_id, category_id = _create_menu_with_category(client, premium_source.id, headers)
+    item = _create_menu_item(client, premium_source.id, menu_id, category_id, headers)
+
+    blocked = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("producto.jpg", _image_bytes(format_name="JPEG"), "image/jpeg"),
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Feature not enabled: digital_menu"
+
+
+def test_other_tenant_cannot_upload_or_delete_foreign_product_images(client, db: Session) -> None:
+    owner_a = make_user(db, "tenant-a-image@example.com")
+    owner_b = make_user(db, "tenant-b-image@example.com")
+    business_a = make_business(
+        db, "Tenant A Images", "tenant-a-images", plan_key=BusinessPlanKey.premium
+    )
+    business_b = make_business(
+        db, "Tenant B Images", "tenant-b-images", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner_a, business_a, MembershipRole.owner)
+    add_membership(db, owner_b, business_b, MembershipRole.owner)
+
+    menu_a, category_a = _create_menu_with_category(client, business_a.id, auth_headers(owner_a))
+    item_a = _create_menu_item(
+        client, business_a.id, menu_a, category_a, auth_headers(owner_a), name="Ajeno"
+    )
+    menu_b, _ = _create_menu_with_category(client, business_b.id, auth_headers(owner_b))
+
+    blocked_upload = client.post(
+        f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/items/{item_a['id']}/image",
+        headers=auth_headers(owner_b),
+        files=_image_upload("producto.jpg", _image_bytes(format_name="JPEG"), "image/jpeg"),
+    )
+    assert blocked_upload.status_code == 404
+
+    blocked_delete = client.delete(
+        f"/api/businesses/{business_b.id}/digital-menu/{menu_b}/items/{item_a['id']}/image",
+        headers=auth_headers(owner_b),
+    )
+    assert blocked_delete.status_code == 404
+
+
+def test_product_image_upload_validation_and_failure_do_not_alter_item(client, db: Session) -> None:
+    owner = make_user(db, "item-image-validation@example.com")
+    business = make_business(
+        db, "Item Validation Biz", "item-validation-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(
+        client, business.id, menu_id, category_id, headers, name="Milanesa", price="9999.00"
+    )
+
+    too_large = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("huge.jpg", b"x" * (10 * 1024 * 1024 + 1), "image/jpeg"),
+    )
+    assert too_large.status_code == 413
+
+    invalid_type = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("foto.txt", b"hello", "text/plain"),
+    )
+    assert invalid_type.status_code == 400
+
+    corrupt = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("foto.png", b"not-an-image", "image/png"),
+    )
+    assert corrupt.status_code == 400
+
+    persisted = db.get(MenuItem, item["id"])
+    assert persisted is not None
+    assert persisted.name == "Milanesa"
+    assert Decimal(str(persisted.price)) == Decimal("9999.00")
+    assert persisted.image_key is None
+    assert persisted.image_url is None
+
+
+def test_replacing_product_image_updates_reference_and_failed_replace_keeps_previous_image(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "item-image-replace@example.com")
+    business = make_business(
+        db, "Replace Image Biz", "replace-image-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    first_upload = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("primera.jpg", _image_bytes(format_name="JPEG"), "image/jpeg"),
+    )
+    assert first_upload.status_code == 200
+
+    first_state = db.get(MenuItem, item["id"])
+    assert first_state is not None
+    first_key = first_state.image_key
+    first_url = first_state.image_url
+    assert first_key is not None
+    assert first_url is not None
+    assert client.get(first_url, headers=headers).status_code == 200
+
+    replaced = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload(
+            "segunda.png",
+            _image_bytes(format_name="PNG", color=(25, 180, 110)),
+            "image/png",
+        ),
+    )
+    assert replaced.status_code == 200
+
+    second_state = db.get(MenuItem, item["id"])
+    assert second_state is not None
+    assert second_state.image_key is not None
+    assert second_state.image_key != first_key
+    assert second_state.image_url == first_url
+    assert client.get(second_state.image_url, headers=headers).status_code == 200
+    with pytest.raises(FileNotFoundError):
+        LocalStorage().open(first_key)
+
+    failed_replace = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("rota.png", b"bad-image", "image/png"),
+    )
+    assert failed_replace.status_code == 400
+
+    final_state = db.get(MenuItem, item["id"])
+    assert final_state is not None
+    assert final_state.image_key == second_state.image_key
+    assert final_state.image_url == second_state.image_url
+    assert client.get(final_state.image_url, headers=headers).status_code == 200
+
+
+def test_delete_product_image_clears_reference_and_keeps_item(client, db: Session) -> None:
+    owner = make_user(db, "item-image-delete@example.com")
+    business = make_business(
+        db, "Delete Image Biz", "delete-image-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    uploaded = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload("foto.webp", _image_bytes(format_name="WEBP"), "image/webp"),
+    )
+    assert uploaded.status_code == 200
+    image_url = uploaded.json()["image_url"]
+
+    deleted = client.delete(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["image_url"] is None
+
+    persisted = db.get(MenuItem, item["id"])
+    assert persisted is not None
+    assert persisted.name == "Producto"
+    assert persisted.image_key is None
+    assert persisted.image_url is None
+    assert client.get(image_url, headers=headers).status_code == 404
+
+
+def test_product_image_processing_optimizes_output_and_strips_exif_metadata(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "item-image-processing@example.com")
+    business = make_business(
+        db, "Processing Image Biz", "processing-image-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+    menu_id, category_id = _create_menu_with_category(client, business.id, headers)
+    item = _create_menu_item(client, business.id, menu_id, category_id, headers)
+
+    uploaded = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu_id}/items/{item['id']}/image",
+        headers=headers,
+        files=_image_upload(
+            "orientada.jpg",
+            _image_bytes(
+                format_name="JPEG",
+                size=(2400, 1200),
+                with_exif_orientation=True,
+            ),
+            "image/jpeg",
+        ),
+    )
+    assert uploaded.status_code == 200
+
+    persisted = db.get(MenuItem, item["id"])
+    assert persisted is not None
+    assert persisted.image_key is not None
+    stored_path = LocalStorage().open(persisted.image_key)
+    original_size = len(
+        _image_bytes(format_name="JPEG", size=(2400, 1200), with_exif_orientation=True)
+    )
+    final_size = stored_path.stat().st_size
+    assert final_size < original_size
+
+    with Image.open(stored_path) as optimized:
+        assert optimized.format == "WEBP"
+        assert max(optimized.width, optimized.height) <= 1200
+        assert optimized.height >= optimized.width
+        assert optimized.info.get("exif") is None
 
 
 def test_essential_business_cannot_use_private_digital_menu_endpoints(client, db: Session) -> None:

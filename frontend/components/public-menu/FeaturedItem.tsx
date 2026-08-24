@@ -17,6 +17,8 @@ export function FeaturedItem({
         <img
           alt={item.name}
           className="public-menu-featured-card__image"
+          decoding="async"
+          loading="lazy"
           src={item.image_url}
         />
       ) : null}

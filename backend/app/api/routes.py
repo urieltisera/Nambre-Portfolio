@@ -50,6 +50,7 @@ from app.models import (
     BusinessStatus,
     DestinationType,
     DigitalMenu,
+    DigitalMenuStatus,
     DynamicLink,
     InvitationToken,
     LegalAcceptance,
@@ -61,6 +62,7 @@ from app.models import (
     QRCode,
     User,
 )
+from app.repositories.digital_menu_repository import get_business_menu_item
 from app.schemas import (
     AdminInviteIn,
     AnalyticsSummaryOut,
@@ -144,6 +146,11 @@ from app.services.legal_service import (
     accept_legal_documents,
     latest_legal_acceptances,
     pending_legal_documents,
+)
+from app.services.menu_item_image_service import (
+    build_private_menu_item_image_url,
+    delete_menu_item_image,
+    upload_menu_item_image,
 )
 from app.services.menu_service import (
     get_active_menu,
@@ -794,7 +801,6 @@ def post_digital_menu_item(
         description=payload.description,
         price=payload.price,
         currency=payload.currency,
-        image_url=payload.image_url,
         position=payload.position,
         is_visible=payload.is_visible,
         is_available=payload.is_available,
@@ -839,7 +845,6 @@ def patch_digital_menu_item(
         description=data.get("description"),
         price=data.get("price"),
         currency=data.get("currency"),
-        image_url=data.get("image_url"),
         position=data.get("position"),
         is_visible=data.get("is_visible"),
         is_available=data.get("is_available"),
@@ -853,6 +858,98 @@ def patch_digital_menu_item(
         target_type="menu_item",
         target_id=item.id,
         details=payload.model_dump(exclude_unset=True, mode="json"),
+    )
+    db.commit()
+    return item
+
+
+@router.post(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}/image",
+    response_model=MenuItemOut,
+)
+async def post_digital_menu_item_image(
+    business_id: str,
+    menu_id: str,
+    item_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MenuItem:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
+    item = await upload_menu_item_image(
+        db,
+        business_id=business_id,
+        menu_id=menu_id,
+        item_id=item_id,
+        file=file,
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.item_image_uploaded",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_item",
+        target_id=item.id,
+        details={"menu_id": menu_id},
+    )
+    db.commit()
+    return item
+
+
+@router.get("/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}/image")
+def get_digital_menu_item_image(
+    business_id: str,
+    menu_id: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FileResponse:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.view_business)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
+    item = get_business_menu_item(db, business_id, menu_id, item_id)
+    if item is None or not item.image_key:
+        raise HTTPException(status_code=404, detail="Product image not found")
+    if item.image_url != build_private_menu_item_image_url(business_id, menu_id, item_id):
+        item.image_url = build_private_menu_item_image_url(business_id, menu_id, item_id)
+        db.commit()
+    path = LocalStorage().open(item.image_key)
+    return FileResponse(path, media_type="image/webp", headers=_dynamic_public_cache_headers())
+
+
+@router.delete(
+    "/api/businesses/{business_id}/digital-menu/{menu_id}/items/{item_id}/image",
+    response_model=MenuItemOut,
+)
+def delete_digital_menu_item_image(
+    business_id: str,
+    menu_id: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MenuItem:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_menu)
+    business = require_operable_business(db, user, business_id)
+    require_business_feature(business, BusinessFeatureKey.digital_menu)
+    item = delete_menu_item_image(
+        db,
+        business_id=business_id,
+        menu_id=menu_id,
+        item_id=item_id,
+    )
+    record_audit_event(
+        db,
+        event_type="digital_menu.item_image_deleted",
+        actor_user_id=user.id,
+        business_id=business_id,
+        target_type="menu_item",
+        target_id=item.id,
+        details={"menu_id": menu_id},
     )
     db.commit()
     return item
@@ -1096,6 +1193,43 @@ def public_digital_menu_page_data(
         },
         menu=menu,
         categories=categories,
+    )
+
+
+@router.get("/media/menu-items/{item_id}/{filename}", response_model=None)
+def public_menu_item_image(
+    item_id: str, filename: str, db: Session = Depends(get_db)
+) -> FileResponse:
+    item = db.get(MenuItem, item_id)
+    if (
+        item is None
+        or not item.image_key
+        or Path(item.image_key).name != filename
+        or not item.is_visible
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    category = db.get(MenuCategory, item.category_id)
+    if category is None or not category.is_visible:
+        raise HTTPException(status_code=404, detail="Not found")
+    menu = db.get(DigitalMenu, category.digital_menu_id)
+    if (
+        menu is None
+        or menu.status != DigitalMenuStatus.published
+        or not menu.is_published
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    business = db.get(Business, menu.business_id)
+    if (
+        business is None
+        or business.status not in {BusinessStatus.active, BusinessStatus.demo}
+        or not business_has_feature(business, BusinessFeatureKey.digital_menu)
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    path = LocalStorage().open(item.image_key)
+    return FileResponse(
+        path,
+        media_type="image/webp",
+        headers=_immutable_public_asset_headers(),
     )
 
 
@@ -1365,6 +1499,12 @@ def _dynamic_public_cache_headers() -> dict[str, str]:
         "Cache-Control": "no-store, no-cache, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
+    }
+
+
+def _immutable_public_asset_headers() -> dict[str, str]:
+    return {
+        "Cache-Control": "public, max-age=31536000, immutable",
     }
 
 

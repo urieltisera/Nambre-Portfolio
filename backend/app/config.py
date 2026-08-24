@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="change-me-local-only", min_length=16)
     access_token_minutes: int = 60 * 8
     max_pdf_bytes: int = 10 * 1024 * 1024
+    max_product_image_bytes: int = 10 * 1024 * 1024
+    max_product_image_source_dimension: int = 8000
+    product_image_max_dimension: int = 1200
     storage_path: str = "storage"
     public_base_url: str = "http://localhost:8000"
     scan_event_retention_days: int = 90

@@ -25,6 +25,8 @@ export function MenuItemCard({
         <img
           alt={item.name}
           className="public-menu-item-card__image"
+          decoding="async"
+          loading="lazy"
           src={item.image_url}
         />
       ) : null}

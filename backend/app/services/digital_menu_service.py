@@ -28,11 +28,13 @@ from app.repositories.digital_menu_repository import (
     list_public_categories,
     list_public_items_by_category,
 )
+from app.services.menu_item_image_service import build_menu_item_image_url
 from app.services.menu_service import (
     ensure_dynamic_link,
     get_active_menu,
     get_or_create_dynamic_link,
 )
+from app.storage.local import LocalStorage
 
 
 def get_business_digital_menu(
@@ -177,7 +179,6 @@ def create_menu_item(
     description: str | None,
     price: Decimal,
     currency: str,
-    image_url: str | None,
     position: int,
     is_visible: bool,
     is_available: bool,
@@ -192,7 +193,6 @@ def create_menu_item(
         description=description,
         price=price,
         currency=currency,
-        image_url=image_url,
         position=position,
         is_visible=is_visible,
         is_available=is_available,
@@ -212,7 +212,6 @@ def update_menu_item(
     description: str | None = None,
     price: Decimal | None = None,
     currency: str | None = None,
-    image_url: str | None = None,
     position: int | None = None,
     is_visible: bool | None = None,
     is_available: bool | None = None,
@@ -229,8 +228,6 @@ def update_menu_item(
         item.price = price
     if currency is not None:
         item.currency = currency
-    if image_url is not None or image_url == "":
-        item.image_url = image_url
     if position is not None:
         item.position = position
     if is_visible is not None:
@@ -248,7 +245,10 @@ def remove_menu_item(db: Session, *, business_id: str, menu_id: str, item_id: st
     item = get_business_menu_item(db, business_id, menu_id, item_id)
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+    image_key = item.image_key
     delete_item(db, item)
+    if image_key:
+        LocalStorage().delete(image_key)
 
 
 def set_digital_menu_as_business_destination(
@@ -307,6 +307,29 @@ def get_public_digital_menu_payload(
     items_by_category = list_public_items_by_category(db, menu.id)
     serialized_categories: list[dict[str, object]] = []
     for category in categories:
+        category_items: list[dict[str, object]] = []
+        for item in items_by_category.get(category.id, []):
+            category_items.append(
+                {
+                    "id": item.id,
+                    "category_id": item.category_id,
+                    "name": item.name,
+                    "description": item.description,
+                    "price": item.price,
+                    "currency": item.currency,
+                    "image_url": (
+                        build_menu_item_image_url(item.id, item.image_key)
+                        if item.image_key is not None
+                        else None
+                    ),
+                    "position": item.position,
+                    "is_visible": item.is_visible,
+                    "is_available": item.is_available,
+                    "is_featured": item.is_featured,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
+                }
+            )
         serialized_categories.append(
             {
                 "id": category.id,
@@ -314,7 +337,7 @@ def get_public_digital_menu_payload(
                 "description": category.description,
                 "position": category.position,
                 "is_visible": category.is_visible,
-                "items": items_by_category.get(category.id, []),
+                "items": category_items,
             }
         )
     return business, menu, serialized_categories

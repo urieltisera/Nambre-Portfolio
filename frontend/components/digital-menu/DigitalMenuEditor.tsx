@@ -13,6 +13,7 @@ import {
   createDigitalMenu,
   createMenuCategory,
   createMenuItem,
+  deleteMenuItemImage,
   deleteMenuCategory,
   deleteMenuItem,
   DigitalMenu,
@@ -22,8 +23,10 @@ import {
   listMenuItems,
   MenuCategory,
   MenuItem,
+  productImageErrorMessage,
   updateMenuCategory,
   updateMenuItem,
+  uploadMenuItemImage,
 } from "@/lib/api";
 import {formatArsPrice} from "@/lib/money";
 import {CategoryForm, CategoryFormValues} from "./CategoryForm";
@@ -157,24 +160,67 @@ export function DigitalMenuEditor({
     setError("");
     setFeedback("");
     try {
+      const itemPayload = {
+        currency: values.currency,
+        description: values.description,
+        is_available: values.is_available,
+        is_featured: values.is_featured,
+        is_visible: values.is_visible,
+        name: values.name,
+        price: values.price,
+      };
+      let imageError = "";
       if (itemEditor?.mode === "edit") {
-        await updateMenuItem(token, business.id, menu.id, itemEditor.item.id, values);
-        setFeedback("Producto guardado correctamente.");
+        await updateMenuItem(token, business.id, menu.id, itemEditor.item.id, itemPayload);
+        try {
+          if (values.imageFile) {
+            await uploadMenuItemImage(
+              token,
+              business.id,
+              menu.id,
+              itemEditor.item.id,
+              values.imageFile,
+            );
+          } else if (values.removeImage && itemEditor.item.image_url) {
+            await deleteMenuItemImage(token, business.id, menu.id, itemEditor.item.id);
+          }
+        } catch (imageUploadError: unknown) {
+          imageError = productImageErrorMessage(imageUploadError);
+        }
+        setFeedback(
+          imageError
+            ? "Producto guardado, pero la foto no pudo actualizarse."
+            : "Producto guardado correctamente.",
+        );
       } else {
         const categoryItems = itemsByCategory.get(itemEditor?.categoryId ?? "") ?? [];
         const nextPosition =
           categoryItems.length > 0
             ? Math.max(...categoryItems.map((item) => item.position)) + 1
             : 0;
-        await createMenuItem(token, business.id, menu.id, itemEditor?.categoryId ?? "", {
-          ...values,
+        const createdItem = await createMenuItem(token, business.id, menu.id, itemEditor?.categoryId ?? "", {
+          ...itemPayload,
           currency: "ARS",
           position: nextPosition,
         });
-        setFeedback("Producto creado correctamente.");
+        if (values.imageFile) {
+          try {
+            await uploadMenuItemImage(token, business.id, menu.id, createdItem.id, values.imageFile);
+          } catch (imageUploadError: unknown) {
+            imageError = productImageErrorMessage(imageUploadError);
+          }
+        }
+        setFeedback(
+          imageError
+            ? "Producto creado, pero la foto no pudo subirse."
+            : "Producto creado correctamente.",
+        );
       }
       setItemEditor(null);
       await loadEditorState();
+      if (imageError) {
+        setError(imageError);
+      }
     } catch (saveError: unknown) {
       setError(
         digitalMenuErrorMessage(
@@ -360,13 +406,20 @@ export function DigitalMenuEditor({
                     ? {
                         currency: itemEditor.item.currency,
                         description: itemEditor.item.description ?? "",
+                        image_url: itemEditor.item.image_url,
                         is_available: itemEditor.item.is_available,
                         is_featured: itemEditor.item.is_featured,
                         is_visible: itemEditor.item.is_visible,
                         name: itemEditor.item.name,
                         price: itemEditor.item.price,
                       }
-                    : {currency: "ARS", is_available: true, is_featured: false, is_visible: true}
+                    : {
+                        currency: "ARS",
+                        image_url: null,
+                        is_available: true,
+                        is_featured: false,
+                        is_visible: true,
+                      }
                 }
                 onCancel={() => setItemEditor(null)}
                 onSubmit={handleItemSubmit}
@@ -490,6 +543,7 @@ export function DigitalMenuEditor({
                               <div className="digital-menu-item-copy">
                                 <strong>{item.name}</strong>
                                 <span>{formatArsPrice(item.price)}</span>
+                                {item.image_url ? <span className="muted">Con foto</span> : null}
                                 {item.description ? <p className="muted">{item.description}</p> : null}
                               </div>
                               <div className="digital-menu-badges">

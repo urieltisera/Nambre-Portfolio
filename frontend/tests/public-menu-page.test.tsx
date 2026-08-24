@@ -44,7 +44,7 @@ const publicMenuFixture: PublicDigitalMenuPage = {
           currency: "ARS",
           description: "Con menta fresca",
           id: "item-1",
-          image_url: null,
+          image_url: "https://example.com/limonada.webp",
           is_available: true,
           is_featured: true,
           is_visible: true,
@@ -156,6 +156,9 @@ describe("PublicMenuPage", () => {
     expect(screen.getByText("Agotado")).toBeTruthy();
     expect(screen.getAllByText("$ 4.200,00")).toHaveLength(2);
     expect(screen.getByText("$ 7.600,00")).toBeTruthy();
+    expect(screen.getAllByAltText("Limonada de autor")).toHaveLength(2);
+    expect(screen.getByAltText("Tostada premium")).toBeTruthy();
+    expect(screen.queryByAltText("Cold brew")).toBeNull();
     expect(screen.queryByText("No mostrar")).toBeNull();
     expect(screen.queryByText("Oculta")).toBeNull();
     expect(screen.queryByText("Secreto")).toBeNull();

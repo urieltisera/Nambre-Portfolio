@@ -16,8 +16,24 @@ down_revision: str | None = "0008_menu_item_images"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+heading_font_key_enum = sa.Enum(
+    "editorial",
+    "modern",
+    "classic",
+    "rounded",
+    name="headingfontkey",
+)
+body_font_key_enum = sa.Enum("clean", "humanist", "modern", name="bodyfontkey")
+card_style_key_enum = sa.Enum("square", "soft", "rounded", name="cardstylekey")
+
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        heading_font_key_enum.create(bind, checkfirst=True)
+        body_font_key_enum.create(bind, checkfirst=True)
+        card_style_key_enum.create(bind, checkfirst=True)
+
     op.add_column(
         "digital_menus",
         sa.Column("accent_color", sa.String(length=7), nullable=False, server_default="#955F32"),
@@ -52,7 +68,7 @@ def upgrade() -> None:
         "digital_menus",
         sa.Column(
             "heading_font",
-            sa.Enum("editorial", "modern", "classic", "rounded", name="headingfontkey"),
+            heading_font_key_enum,
             nullable=False,
             server_default="editorial",
         ),
@@ -61,7 +77,7 @@ def upgrade() -> None:
         "digital_menus",
         sa.Column(
             "body_font",
-            sa.Enum("clean", "humanist", "modern", name="bodyfontkey"),
+            body_font_key_enum,
             nullable=False,
             server_default="clean",
         ),
@@ -70,7 +86,7 @@ def upgrade() -> None:
         "digital_menus",
         sa.Column(
             "card_style",
-            sa.Enum("square", "soft", "rounded", name="cardstylekey"),
+            card_style_key_enum,
             nullable=False,
             server_default="rounded",
         ),
@@ -78,6 +94,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
     op.drop_column("digital_menus", "card_style")
     op.drop_column("digital_menus", "body_font")
     op.drop_column("digital_menus", "heading_font")
@@ -86,3 +103,7 @@ def downgrade() -> None:
     op.drop_column("digital_menus", "surface_color")
     op.drop_column("digital_menus", "background_color")
     op.drop_column("digital_menus", "accent_color")
+    if bind.dialect.name == "postgresql":
+        card_style_key_enum.drop(bind, checkfirst=True)
+        body_font_key_enum.drop(bind, checkfirst=True)
+        heading_font_key_enum.drop(bind, checkfirst=True)

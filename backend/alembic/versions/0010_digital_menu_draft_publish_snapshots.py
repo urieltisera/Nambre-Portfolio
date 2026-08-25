@@ -1,6 +1,6 @@
 """digital menu draft publish snapshots
 
-Revision ID: 0010_digital_menu_draft_publish_snapshots
+Revision ID: 0010_digital_menu_snapshots
 Revises: 0009_digital_menu_theme
 Create Date: 2026-08-24
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0010_digital_menu_draft_publish_snapshots"
+revision: str = "0010_digital_menu_snapshots"
 down_revision: str | None = "0009_digital_menu_theme"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

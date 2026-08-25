@@ -16,13 +16,19 @@ down_revision: str | None = "0006_digital_menu_foundation"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+business_plan_key_enum = sa.Enum("essential", "premium", name="businessplankey")
+
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        business_plan_key_enum.create(bind, checkfirst=True)
+
     op.add_column(
         "businesses",
         sa.Column(
             "plan_key",
-            sa.Enum("essential", "premium", name="businessplankey"),
+            business_plan_key_enum,
             nullable=False,
             server_default="essential",
         ),
@@ -30,4 +36,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
     op.drop_column("businesses", "plan_key")
+    if bind.dialect.name == "postgresql":
+        business_plan_key_enum.drop(bind, checkfirst=True)

@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowUpRight, Eye, EyeOff, Pencil, Plus, Rocket, Sparkles, Trash2} from "lucide-react";
 import {DigitalMenuDesignEditor} from "@/components/digital-menu/DigitalMenuDesignEditor";
 import {Alert} from "@/components/ui/Alert";
@@ -45,7 +45,7 @@ type CategoryEditorState =
   | null;
 
 type ItemEditorState =
-  | {categoryId: string; mode: "create"}
+  | {categoryId?: string; mode: "create"}
   | {item: MenuItem; mode: "edit"}
   | null;
 
@@ -76,6 +76,8 @@ export function DigitalMenuEditor({
   const [activeView, setActiveView] = useState<"content" | "design">("content");
   const [publishing, setPublishing] = useState(false);
   const [openingPreview, setOpeningPreview] = useState(false);
+  const categoryFormCardRef = useRef<HTMLDivElement | null>(null);
+  const itemFormCardRef = useRef<HTMLDivElement | null>(null);
 
   const hasPublication = menu?.has_publication === true || (menu?.published_version ?? 0) > 0;
   const hasUnpublishedChanges =
@@ -122,6 +124,16 @@ export function DigitalMenuEditor({
     void loadEditorState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [business.id]);
+
+  useEffect(() => {
+    if (!categoryEditor || !categoryFormCardRef.current) return;
+    categoryFormCardRef.current.scrollIntoView({behavior: "smooth", block: "start"});
+  }, [categoryEditor]);
+
+  useEffect(() => {
+    if (!itemEditor || !itemFormCardRef.current) return;
+    itemFormCardRef.current.scrollIntoView({behavior: "smooth", block: "start"});
+  }, [itemEditor]);
 
   async function handleCreateMenu() {
     setBusy(true);
@@ -281,7 +293,8 @@ export function DigitalMenuEditor({
             : "Producto guardado correctamente.",
         );
       } else {
-        const categoryItems = itemsByCategory.get(itemEditor?.categoryId ?? "") ?? [];
+        const targetCategoryId = values.categoryId || itemEditor?.categoryId || "";
+        const categoryItems = itemsByCategory.get(targetCategoryId) ?? [];
         const nextPosition =
           categoryItems.length > 0
             ? Math.max(...categoryItems.map((item) => item.position)) + 1
@@ -290,10 +303,9 @@ export function DigitalMenuEditor({
           token,
           business.id,
           menu.id,
-          itemEditor?.categoryId ?? "",
+          targetCategoryId,
           {
             ...itemPayload,
-            currency: "ARS",
             position: nextPosition,
           },
         );
@@ -431,6 +443,18 @@ export function DigitalMenuEditor({
     }
   }
 
+  function openCategoryEditor(editor: CategoryEditorState) {
+    setItemEditor(null);
+    setCategoryEditor(editor);
+  }
+
+  function openItemEditor(editor: ItemEditorState) {
+    setCategoryEditor(null);
+    setItemEditor(editor);
+  }
+
+  const categoryOptions = categories.map((category) => ({id: category.id, name: category.name}));
+
   if (loading) {
     return <LoadingState message="Cargando tu Carta Nambre..." />;
   }
@@ -442,7 +466,7 @@ export function DigitalMenuEditor({
           <div>
             <h2>Carta Nambre</h2>
             <p className="muted">
-              Administrá contenido y estados desde el dashboard. Nambre se ocupa del layout.
+              Carta: categorías y productos. Diseño: colores, tipografía y estilos.
             </p>
             {menu ? (
               <p className="muted">
@@ -537,7 +561,7 @@ export function DigitalMenuEditor({
       ) : (
         <>
           {categoryEditor ? (
-            <Card className="panel-stack">
+            <Card className="panel-stack" ref={categoryFormCardRef}>
               <CategoryForm
                 busy={busy}
                 initialValues={
@@ -558,12 +582,15 @@ export function DigitalMenuEditor({
           ) : null}
 
           {itemEditor ? (
-            <Card className="panel-stack">
+            <Card className="panel-stack" ref={itemFormCardRef}>
               <MenuItemForm
                 busy={busy}
+                categoryLocked={itemEditor.mode === "edit"}
+                categoryOptions={categoryOptions}
                 initialValues={
                   itemEditor.mode === "edit"
                     ? {
+                        categoryId: itemEditor.item.category_id,
                         currency: itemEditor.item.currency,
                         description: itemEditor.item.description ?? "",
                         image_url: itemEditor.item.image_url,
@@ -574,6 +601,7 @@ export function DigitalMenuEditor({
                         price: itemEditor.item.price,
                       }
                     : {
+                        categoryId: itemEditor.categoryId,
                         currency: "ARS",
                         image_url: null,
                         is_available: true,
@@ -583,6 +611,7 @@ export function DigitalMenuEditor({
                 }
                 onCancel={() => setItemEditor(null)}
                 onSubmit={handleItemSubmit}
+                selectedCategoryId={itemEditor.mode === "create" ? itemEditor.categoryId : itemEditor.item.category_id}
                 submitLabel={itemEditor.mode === "edit" ? "Guardar producto" : "Crear producto"}
                 title={itemEditor.mode === "edit" ? "Editar producto" : "Nuevo producto"}
               />
@@ -596,25 +625,36 @@ export function DigitalMenuEditor({
                 <p className="muted">
                   {categories.length
                     ? `${categories.length} categoría${categories.length === 1 ? "" : "s"}`
-                    : "Tu carta todavía está vacía."}
+                    : "Empezá creando una categoría para organizar tu carta."}
                 </p>
               </div>
-              <Button disabled={!canMutate || busy} onClick={() => setCategoryEditor({mode: "create"})}>
-                <Plus size={16} /> Nueva categoría
-              </Button>
+              <div className="digital-menu-inline-actions">
+                {categories.length ? (
+                  <Button
+                    disabled={!canMutate || busy}
+                    onClick={() => openItemEditor({mode: "create"})}
+                    variant="secondary"
+                  >
+                    <Plus size={16} /> Nuevo producto
+                  </Button>
+                ) : null}
+                <Button disabled={!canMutate || busy} onClick={() => openCategoryEditor({mode: "create"})}>
+                  <Plus size={16} /> Nueva categoría
+                </Button>
+              </div>
             </div>
             {!categories.length ? (
               <EmptyState
                 action={
                   <Button
                     disabled={!canMutate || busy}
-                    onClick={() => setCategoryEditor({mode: "create"})}
+                    onClick={() => openCategoryEditor({mode: "create"})}
                   >
-                    <Plus size={16} /> Crear categoría
+                    <Plus size={16} /> Crear primera categoría
                   </Button>
                 }
-                description="Creá tu primera categoría para empezar."
-                title="Tu carta todavía está vacía."
+                description="Empezá creando una categoría, por ejemplo Entradas, Principales o Bebidas."
+                title="Todavía no agregaste categorías"
               />
             ) : (
               <div className="digital-menu-category-list">
@@ -657,7 +697,7 @@ export function DigitalMenuEditor({
                         </Button>
                         <Button
                           disabled={busy}
-                          onClick={() => setCategoryEditor({category, mode: "edit"})}
+                          onClick={() => openCategoryEditor({category, mode: "edit"})}
                           size="sm"
                           variant="secondary"
                         >
@@ -687,7 +727,7 @@ export function DigitalMenuEditor({
                           action={
                             <Button
                               disabled={!canMutate || busy}
-                              onClick={() => setItemEditor({categoryId: category.id, mode: "create"})}
+                              onClick={() => openItemEditor({categoryId: category.id, mode: "create"})}
                               size="sm"
                             >
                               <Plus size={16} /> Agregar producto
@@ -737,7 +777,7 @@ export function DigitalMenuEditor({
                                 </Button>
                                 <Button
                                   disabled={busy}
-                                  onClick={() => setItemEditor({item, mode: "edit"})}
+                                  onClick={() => openItemEditor({item, mode: "edit"})}
                                   size="sm"
                                   variant="secondary"
                                 >
@@ -801,7 +841,7 @@ export function DigitalMenuEditor({
 
                       <Button
                         disabled={!canMutate || busy}
-                        onClick={() => setItemEditor({categoryId: category.id, mode: "create"})}
+                        onClick={() => openItemEditor({categoryId: category.id, mode: "create"})}
                         size="sm"
                         variant="secondary"
                       >

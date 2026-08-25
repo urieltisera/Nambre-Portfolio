@@ -217,7 +217,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Demo Biz 👋");
+    await screen.findByRole("heading", {name: "Demo Biz"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
     const logoInput = screen.getByLabelText("Logo") as HTMLInputElement;
@@ -331,7 +331,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel isPlatformAdmin token="admin-token" user={null} />);
 
-    await screen.findByText("Hola, Admin Biz 👋");
+    await screen.findByRole("heading", {name: "Admin Biz"});
     expect(mocks.listBusinesses).toHaveBeenCalledWith("admin-token", true);
   });
 
@@ -390,7 +390,7 @@ describe("BusinessPanel logo flow", () => {
 
     const {container} = renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Cafe Norte 👋");
+    await screen.findByRole("heading", {name: "Cafe Norte"});
     expect(screen.getByTestId("suspended-panel")).toBeTruthy();
     expect(screen.getByText("Negocio suspendido")).toBeTruthy();
 
@@ -545,7 +545,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Bar Central 👋");
+    await screen.findByRole("heading", {name: "Bar Central"});
     await waitFor(() => {
       expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
     });
@@ -598,7 +598,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Analytics Biz 👋");
+    await screen.findByRole("heading", {name: "Analytics Biz"});
     fireEvent.click(screen.getByRole("button", {name: "Estadísticas"}));
 
     const [windowSwitcher] = screen.getAllByRole("tablist", {name: "Ventana de actividad"});
@@ -654,7 +654,7 @@ describe("BusinessPanel logo flow", () => {
       </AppearanceProvider>,
     );
 
-    await screen.findByText("Hola, Perf Biz 👋");
+    await screen.findByRole("heading", {name: "Perf Biz"});
     await waitFor(() => {
       expect(mocks.listBusinesses).toHaveBeenCalledTimes(1);
     });
@@ -771,7 +771,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Destination Owner Biz 👋");
+    await screen.findByRole("heading", {name: "Destination Owner Biz"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
     fireEvent.click(screen.getByRole("radio", {name: /Carta digital propia/i}));
@@ -852,7 +852,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Carta Nambre Vacia 👋");
+    await screen.findByRole("heading", {name: "Carta Nambre Vacia"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
     fireEvent.click(screen.getByRole("radio", {name: /Carta Nambre/i}));
 
@@ -861,6 +861,13 @@ describe("BusinessPanel logo flow", () => {
 
     await waitFor(() => expect(mocks.createDigitalMenu).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Carta Nambre creada correctamente.")).toBeTruthy();
+    expect(await screen.findByText("Todavía no agregaste categorías")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Empezá creando una categoría, por ejemplo Entradas, Principales o Bebidas.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", {name: "Crear primera categoría"})).toBeTruthy();
   });
 
   it("lets the owner create, edit, hide and move categories in Carta Nambre", async () => {
@@ -955,13 +962,22 @@ describe("BusinessPanel logo flow", () => {
       return categories.find((category) => category.id === categoryId)!;
     });
 
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+      writable: true,
+    });
+
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Carta Categorias 👋");
+    await screen.findByRole("heading", {name: "Carta Categorias"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
     expect(await screen.findByText("Bebidas")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", {name: /Nueva categoría/i}));
+    await screen.findByRole("heading", {name: "Nueva categoría"});
+    expect(scrollIntoView).toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Postres"}});
     fireEvent.change(screen.getByLabelText("Descripción"), {target: {value: "Dulces"}});
     fireEvent.click(screen.getByRole("button", {name: "Crear categoría"}));
@@ -1017,6 +1033,16 @@ describe("BusinessPanel logo flow", () => {
         is_visible: true,
         name: "Hamburguesas",
         position: 0,
+        updated_at: "2026-08-24T10:00:00Z",
+      },
+      {
+        created_at: "2026-08-24T10:00:00Z",
+        description: "Algo dulce",
+        digital_menu_id: menu.id,
+        id: "cat-desserts",
+        is_visible: true,
+        name: "Postres",
+        position: 1,
         updated_at: "2026-08-24T10:00:00Z",
       },
     ];
@@ -1110,23 +1136,54 @@ describe("BusinessPanel logo flow", () => {
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+      writable: true,
+    });
+
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Carta Productos 👋");
+    await screen.findByRole("heading", {name: "Carta Productos"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
     await screen.findByText("Hamburguesas");
-    fireEvent.click(screen.getAllByRole("button", {name: /Agregar producto/i})[0]);
+    const burgersCard = screen.getByText("Hamburguesas").closest(".digital-menu-category-card");
+    expect(burgersCard).toBeTruthy();
+    fireEvent.click(within(burgersCard as HTMLElement).getAllByRole("button", {name: /Agregar producto/i})[0]);
     await screen.findByRole("heading", {name: "Nuevo producto"});
+    expect((screen.getByLabelText("Categoría *") as HTMLSelectElement).value).toBe("cat-main");
+    fireEvent.click(screen.getByRole("button", {name: "Cancelar"}));
+
+    await screen.findByText("Postres");
+    const dessertCard = screen.getByText("Postres").closest(".digital-menu-category-card");
+    expect(dessertCard).toBeTruthy();
+    fireEvent.click(within(dessertCard as HTMLElement).getAllByRole("button", {name: /Agregar producto/i})[0]);
+    await screen.findByRole("heading", {name: "Nuevo producto"});
+    expect(scrollIntoView).toHaveBeenCalled();
+    expect((screen.getByLabelText("Categoría *") as HTMLSelectElement).value).toBe("cat-desserts");
     fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Doble Bacon"}});
     fireEvent.change(screen.getByLabelText("Descripción"), {target: {value: "Con panceta"}});
+    fireEvent.change(screen.getByLabelText("Moneda"), {target: {value: "USD"}});
     fireEvent.change(screen.getByRole("textbox", {name: /Precio/i}), {target: {value: "12500,50"}});
     fireEvent.click(screen.getByLabelText("Destacado"));
     fireEvent.click(screen.getByRole("button", {name: "Crear producto"}));
 
     await waitFor(() => expect(mocks.createMenuItem).toHaveBeenCalledTimes(1));
+    expect(mocks.createMenuItem).toHaveBeenCalledWith(
+      "owner-token",
+      "biz-dm-items",
+      "dm-items",
+      "cat-desserts",
+      expect.objectContaining({currency: "USD"}),
+    );
     expect(await screen.findByText("Doble Bacon")).toBeTruthy();
     expect(await screen.findByText(/\$.*12\.500,50/)).toBeTruthy();
+
+    const postresSection = screen.getByText("Postres").closest(".digital-menu-category-card");
+    expect(postresSection).toBeTruthy();
+    expect(within(postresSection as HTMLElement).getByText("Doble Bacon")).toBeTruthy();
 
     const createdItemRow = screen.getByText("Doble Bacon").closest(".digital-menu-item-row");
     expect(createdItemRow).toBeTruthy();
@@ -1159,6 +1216,123 @@ describe("BusinessPanel logo flow", () => {
 
     fireEvent.click(within(updatedItemRow as HTMLElement).getByRole("button", {name: "Eliminar"}));
     await waitFor(() => expect(mocks.deleteMenuItem).toHaveBeenCalled());
+  }, 15000);
+
+  it("requires choosing a category from the global product CTA and creates the item in the selected category", async () => {
+    const business: Business = {
+      destination_type: "digital_menu",
+      external_url: null,
+      features: {digital_menu: true},
+      id: "biz-dm-global",
+      logo_url: null,
+      name: "Carta Global",
+      plan_key: "premium",
+      slug: "carta-global",
+      status: "active",
+    };
+    const menu: DigitalMenu = {
+      business_id: business.id,
+      created_at: "2026-08-24T10:00:00Z",
+      id: "dm-global",
+      is_published: false,
+      name: "Carta Global",
+      status: "draft",
+      template_key: "modern",
+      updated_at: "2026-08-24T10:00:00Z",
+    };
+    const categories: MenuCategory[] = [
+      {
+        created_at: "2026-08-24T10:00:00Z",
+        description: "Para compartir",
+        digital_menu_id: menu.id,
+        id: "cat-starters",
+        is_visible: true,
+        name: "Entradas",
+        position: 0,
+        updated_at: "2026-08-24T10:00:00Z",
+      },
+      {
+        created_at: "2026-08-24T10:00:00Z",
+        description: "Bebidas de autor",
+        digital_menu_id: menu.id,
+        id: "cat-drinks",
+        is_visible: true,
+        name: "Happy Hour",
+        position: 1,
+        updated_at: "2026-08-24T10:00:00Z",
+      },
+    ];
+    let items: MenuItem[] = [];
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-dm-global") return business;
+      if (path === "/api/businesses/biz-dm-global/menu") {
+        return {current: null, public_code: "global-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-dm-global/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-dm-global/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-dm-global/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    mocks.fetchDigitalMenu.mockResolvedValue(menu);
+    mocks.listMenuCategories.mockResolvedValue(categories);
+    mocks.listMenuItems.mockImplementation(async () => [...items].sort((a, b) => a.position - b.position));
+    mocks.createMenuItem.mockImplementation(async (_token, _businessId, _menuId, categoryId, payload) => {
+      const created: MenuItem = {
+        category_id: categoryId,
+        created_at: "2026-08-24T10:02:00Z",
+        currency: payload.currency ?? "ARS",
+        description: payload.description ?? null,
+        id: `item-${items.length + 1}`,
+        image_url: null,
+        is_available: payload.is_available ?? true,
+        is_featured: payload.is_featured ?? false,
+        is_visible: payload.is_visible ?? true,
+        name: payload.name,
+        position: payload.position ?? items.length,
+        price: payload.price,
+        updated_at: "2026-08-24T10:02:00Z",
+      };
+      items = [...items, created];
+      return created;
+    });
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByRole("heading", {name: "Carta Global"});
+    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    await screen.findByText("Entradas");
+
+    fireEvent.click(screen.getByRole("button", {name: "Nuevo producto"}));
+    await screen.findByRole("heading", {name: "Nuevo producto"});
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
+
+    fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Negroni"}});
+    fireEvent.change(screen.getByRole("textbox", {name: /Precio/i}), {target: {value: "9500"}});
+    fireEvent.click(screen.getByRole("button", {name: "Crear producto"}));
+
+    expect(mocks.createMenuItem).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", {name: "Nuevo producto"}));
+    await screen.findByRole("heading", {name: "Nuevo producto"});
+    fireEvent.change(screen.getByRole("combobox"), {target: {value: "cat-drinks"}});
+    fireEvent.click(screen.getByRole("button", {name: "Crear producto"}));
+
+    await waitFor(() => expect(mocks.createMenuItem).toHaveBeenCalledTimes(1));
+    expect(mocks.createMenuItem).toHaveBeenCalledWith(
+      "owner-token",
+      "biz-dm-global",
+      "dm-global",
+      "cat-drinks",
+      expect.objectContaining({name: "Negroni"}),
+    );
+
+    const happyHourCard = screen.getByText("Happy Hour").closest(".digital-menu-category-card");
+    expect(happyHourCard).toBeTruthy();
+    expect(within(happyHourCard as HTMLElement).getByText("Negroni")).toBeTruthy();
   }, 15000);
 
   it("shows friendly errors and releases the submit state after a failed product save", async () => {
@@ -1216,7 +1390,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Carta Error 👋");
+    await screen.findByRole("heading", {name: "Carta Error"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
     await screen.findByText("Sandwiches");
     fireEvent.click(screen.getAllByRole("button", {name: /Agregar producto/i})[0]);
@@ -1364,7 +1538,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Carta Fotos 👋");
+    await screen.findByRole("heading", {name: "Carta Fotos"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
     await screen.findByText("Especiales");
 
@@ -1382,7 +1556,7 @@ describe("BusinessPanel logo flow", () => {
       target: {files: [new File(["photo"], "burger.jpg", {type: "image/jpeg"})]},
     });
     expect(screen.getByAltText("Preview de imagen del producto")).toBeTruthy();
-    expect(screen.getByText("Se guardará al confirmar.")).toBeTruthy();
+    expect(screen.getByText("Imagen seleccionada. Se guardará al confirmar.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Burger Melt"}});
     fireEvent.change(screen.getByRole("textbox", {name: /Precio/i}), {target: {value: "14500"}});
@@ -1391,6 +1565,7 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() => expect(mocks.createMenuItem).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mocks.uploadMenuItemImage).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("button", {name: "Guardando..."}).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("Sin foto cargada")).toBeNull();
     if (uploadControl.release === null) {
       throw new Error("Expected pending upload");
     }
@@ -1424,7 +1599,7 @@ describe("BusinessPanel logo flow", () => {
     const editForm = screen.getByRole("heading", {name: "Editar producto"}).closest("form");
     expect(editForm).toBeTruthy();
     fireEvent.click(within(editForm as HTMLElement).getByRole("button", {name: "Eliminar"}));
-    expect(screen.getByText("Sin foto cargada")).toBeTruthy();
+    expect(screen.getByText("La imagen se eliminará al guardar.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", {name: "Guardar producto"}));
     await waitFor(() => expect(mocks.deleteMenuItemImage).toHaveBeenCalledTimes(1));
     await screen.findByText("Producto guardado correctamente.");
@@ -1520,12 +1695,14 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Theme Bistro 👋");
+    await screen.findByRole("heading", {name: "Theme Bistro"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
     fireEvent.click(await screen.findByRole("tab", {name: "Diseño"}));
 
     expect(await screen.findByText("Nambre Natural")).toBeTruthy();
     expect(screen.getByText("Vista previa")).toBeTruthy();
+    expect(screen.getByText("Personalizá colores, tipografía y estilos.")).toBeTruthy();
+    expect(screen.getByText("Así verán tus clientes la carta antes de publicarla.")).toBeTruthy();
 
     const preview = screen.getByTestId("digital-menu-theme-preview");
     const accentInput = screen.getByLabelText("Color principal");
@@ -1606,7 +1783,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Theme Error 👋");
+    await screen.findByRole("heading", {name: "Theme Error"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
     fireEvent.click(await screen.findByRole("tab", {name: "Diseño"}));
     fireEvent.change(screen.getByLabelText("Color principal"), {target: {value: "#1A332B"}});
@@ -1648,7 +1825,7 @@ describe("BusinessPanel logo flow", () => {
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
-    await screen.findByText("Hola, Essential Biz 👋");
+    await screen.findByRole("heading", {name: "Essential Biz"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
     expect(await screen.findByTestId("digital-menu-premium-lock")).toBeTruthy();

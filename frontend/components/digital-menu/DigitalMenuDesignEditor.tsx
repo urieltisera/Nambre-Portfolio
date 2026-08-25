@@ -215,7 +215,7 @@ export function DigitalMenuDesignEditor({
         <div className="owner-compact-card__topline">
           <div>
             <h2>Diseño</h2>
-            <p className="muted">Personalizá colores, tipografías y estilo sin romper el layout.</p>
+            <p className="muted">Personalizá colores, tipografía y estilos.</p>
           </div>
           <Badge tone={hasChanges ? "warning" : "success"}>
             {hasChanges ? "Cambios pendientes" : "Sin cambios"}
@@ -348,7 +348,7 @@ export function DigitalMenuDesignEditor({
         <div className="owner-compact-card__topline">
           <div>
             <h2>Vista previa</h2>
-            <p className="muted">Usa el renderer público real con este borrador local.</p>
+            <p className="muted">Así verán tus clientes la carta antes de publicarla.</p>
           </div>
           <Badge tone="neutral">Mobile</Badge>
         </div>

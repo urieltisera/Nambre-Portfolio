@@ -484,8 +484,8 @@ export function BusinessPanel({
             data-testid="dashboard-layout-minimal"
           >
             <PageHeader
-              subtitle="Tus acciones clave, sin ruido visual."
-              title={`Hola, ${business.name} 👋`}
+              subtitle="Gestioná tu carta y seguí la actividad del negocio."
+              title={business.name}
             />
             <div className="compact-metric-strip">
               <MetricCard
@@ -528,8 +528,8 @@ export function BusinessPanel({
             data-testid="dashboard-layout-maximal"
           >
             <PageHeader
-              subtitle="Así está funcionando tu carta digital hoy."
-              title={`Hola, ${business.name} 👋`}
+              subtitle="Gestioná tu carta y seguí la actividad del negocio."
+              title={business.name}
             />
             <div className="metric-grid">
               <MetricCard

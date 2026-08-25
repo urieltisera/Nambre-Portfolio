@@ -1604,7 +1604,25 @@ select:focus-visible,
 }
 
 .digital-menu-form-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 4fr) minmax(112px, 1fr);
+  align-items: start;
+}
+
+.digital-menu-form-grid .field {
+  align-content: start;
+}
+
+.digital-menu-form-grid .field__control {
+  align-items: start;
+}
+
+.digital-menu-form-grid__price {
+  min-width: 0;
+}
+
+.digital-menu-form-grid__currency {
+  max-width: 100%;
+  min-width: 0;
 }
 
 .error {
@@ -2017,7 +2035,7 @@ select:focus-visible,
 
 .public-menu-footer {
   text-align: center;
-  padding: 1rem 0 0.5rem;
+  padding: 0.75rem 0 0.35rem;
 }
 
 .public-menu-footer a,
@@ -2129,6 +2147,10 @@ select:focus-visible,
   padding: 1rem;
   color: var(--color-text-secondary);
   font-size: 0.95rem;
+}
+
+.digital-menu-image-field__status {
+  font-size: 0.9rem;
 }
 
 .digital-menu-view-switch {

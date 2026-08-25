@@ -187,6 +187,7 @@ describe("PublicMenuPage", () => {
     expect(screen.getByText("Cold brew")).toBeTruthy();
     expect(screen.getByAltText("Tostada premium")).toBeTruthy();
     expect(screen.getByText("Powered by Nambre")).toBeTruthy();
+    expect(screen.queryByText("Una carta pensada para móvil, sin descuidar la legibilidad.")).toBeNull();
   });
 
   it("renders the safe unavailable state", () => {

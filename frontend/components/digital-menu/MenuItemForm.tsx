@@ -9,6 +9,7 @@ const ACCEPTED_PRODUCT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export type MenuItemFormValues = {
+  categoryId: string;
   currency: string;
   description: string;
   imageFile: File | null;
@@ -55,52 +56,82 @@ export function normalizePriceInput(value: string): string | null {
 
 export function MenuItemForm({
   busy = false,
+  categoryOptions = [],
+  categoryLocked = false,
   initialValues,
   onCancel,
   onSubmit,
+  selectedCategoryId,
   submitLabel,
   title,
 }: {
   busy?: boolean;
+  categoryLocked?: boolean;
+  categoryOptions?: Array<{id: string; name: string}>;
   initialValues?: Partial<MenuItemFormValues>;
   onCancel?: () => void;
   onSubmit: (values: MenuItemFormValues) => Promise<void> | void;
+  selectedCategoryId?: string;
   submitLabel: string;
   title: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [name, setName] = useState(initialValues?.name ?? "");
-  const [description, setDescription] = useState(initialValues?.description ?? "");
-  const [price, setPrice] = useState(initialValues?.price ?? "");
-  const [currency, setCurrency] = useState(initialValues?.currency ?? "ARS");
-  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(initialValues?.image_url ?? null);
+  const initialCategoryId =
+    initialValues?.categoryId ?? selectedCategoryId ?? (categoryLocked ? categoryOptions[0]?.id ?? "" : "");
+  const initialName = initialValues?.name ?? "";
+  const initialDescription = initialValues?.description ?? "";
+  const initialPrice = initialValues?.price ?? "";
+  const initialCurrency = initialValues?.currency ?? "ARS";
+  const initialImageUrl = initialValues?.image_url ?? null;
+  const initialIsVisible = initialValues?.is_visible ?? true;
+  const initialIsAvailable = initialValues?.is_available ?? true;
+  const initialIsFeatured = initialValues?.is_featured ?? false;
+  const [categoryId, setCategoryId] = useState(initialCategoryId);
+  const [name, setName] = useState(initialName);
+  const [description, setDescription] = useState(initialDescription);
+  const [price, setPrice] = useState(initialPrice);
+  const [currency, setCurrency] = useState(initialCurrency);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(initialImageUrl);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
-  const [isVisible, setIsVisible] = useState(initialValues?.is_visible ?? true);
-  const [isAvailable, setIsAvailable] = useState(initialValues?.is_available ?? true);
-  const [isFeatured, setIsFeatured] = useState(initialValues?.is_featured ?? false);
+  const [isVisible, setIsVisible] = useState(initialIsVisible);
+  const [isAvailable, setIsAvailable] = useState(initialIsAvailable);
+  const [isFeatured, setIsFeatured] = useState(initialIsFeatured);
+  const [categoryError, setCategoryError] = useState("");
   const [priceError, setPriceError] = useState("");
   const [imageError, setImageError] = useState("");
 
   useEffect(() => {
-    setName(initialValues?.name ?? "");
-    setDescription(initialValues?.description ?? "");
-    setPrice(initialValues?.price ?? "");
-    setCurrency(initialValues?.currency ?? "ARS");
-    setCurrentImageUrl(initialValues?.image_url ?? null);
+    setCategoryId(initialCategoryId);
+    setName(initialName);
+    setDescription(initialDescription);
+    setPrice(initialPrice);
+    setCurrency(initialCurrency);
+    setCurrentImageUrl(initialImageUrl);
     setLocalPreviewUrl(null);
     setImageFile(null);
     setRemoveImage(false);
-    setIsVisible(initialValues?.is_visible ?? true);
-    setIsAvailable(initialValues?.is_available ?? true);
-    setIsFeatured(initialValues?.is_featured ?? false);
+    setIsVisible(initialIsVisible);
+    setIsAvailable(initialIsAvailable);
+    setIsFeatured(initialIsFeatured);
+    setCategoryError("");
     setPriceError("");
     setImageError("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [initialValues]);
+  }, [
+    initialCategoryId,
+    initialCurrency,
+    initialDescription,
+    initialImageUrl,
+    initialIsAvailable,
+    initialIsFeatured,
+    initialIsVisible,
+    initialName,
+    initialPrice,
+  ]);
 
   useEffect(
     () => () => {
@@ -110,6 +141,18 @@ export function MenuItemForm({
     },
     [localPreviewUrl],
   );
+
+  useEffect(() => {
+    if (!categoryId) {
+      return;
+    }
+    const categoryStillExists = categoryOptions.some((category) => category.id === categoryId);
+    if (categoryStillExists) {
+      return;
+    }
+    setCategoryId(categoryLocked ? categoryOptions[0]?.id ?? "" : "");
+    setCategoryError("La categoría elegida ya no está disponible. Elegí otra para continuar.");
+  }, [categoryId, categoryLocked, categoryOptions]);
 
   function handlePickImage() {
     fileInputRef.current?.click();
@@ -159,6 +202,14 @@ export function MenuItemForm({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const categoryStillExists = categoryOptions.length === 0 || categoryOptions.some((category) => category.id === categoryId);
+    if (!categoryId || !categoryStillExists) {
+      setCategoryError(
+        categoryStillExists ? "Elegí una categoría para crear el producto." : "La categoría elegida ya no está disponible. Elegí otra para continuar.",
+      );
+      return;
+    }
+    setCategoryError("");
     const normalizedPrice = normalizePriceInput(price);
     if (!normalizedPrice) {
       setPriceError("Ingresá un precio válido. Ejemplo: 12500,50");
@@ -166,6 +217,7 @@ export function MenuItemForm({
     }
     setPriceError("");
     await onSubmit({
+      categoryId,
       currency: currency.trim().toUpperCase() || "ARS",
       description,
       imageFile,
@@ -182,10 +234,41 @@ export function MenuItemForm({
   const normalizedPreview = normalizePriceInput(price);
   const previewImageUrl = removeImage ? null : localPreviewUrl ?? currentImageUrl;
   const hasPendingImageChange = imageFile !== null || removeImage;
+  const imageStatus = removeImage
+    ? "La imagen se eliminará al guardar."
+    : imageFile
+      ? busy
+        ? "Subiendo imagen..."
+        : "Imagen seleccionada. Se guardará al confirmar."
+      : currentImageUrl
+        ? "Imagen guardada."
+        : "Sin foto cargada";
 
   return (
     <form className="panel-stack" onSubmit={(event) => void handleSubmit(event)}>
       <h3>{title}</h3>
+      {categoryOptions.length > 0 ? (
+        <label className="field">
+          <span className="field__label">Categoría *</span>
+          <select
+            className="ui-input"
+            disabled={busy || categoryLocked}
+            onChange={(event) => {
+              setCategoryId(event.target.value);
+              setCategoryError("");
+            }}
+            value={categoryId}
+          >
+            {!categoryLocked ? <option value="">Elegí una categoría</option> : null}
+            {categoryOptions.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          {categoryError ? <span className="field__hint">{categoryError}</span> : null}
+        </label>
+      ) : null}
       <Input
         autoComplete="off"
         disabled={busy}
@@ -206,6 +289,7 @@ export function MenuItemForm({
       </label>
       <div className="digital-menu-form-grid">
         <Input
+          className="digital-menu-form-grid__price"
           disabled={busy}
           hint={priceError || (normalizedPreview ? formatArsPrice(normalizedPreview) : "Ejemplo: 12500,50")}
           label="Precio *"
@@ -214,6 +298,7 @@ export function MenuItemForm({
           value={price}
         />
         <Input
+          className="digital-menu-form-grid__currency"
           disabled={busy}
           label="Moneda"
           maxLength={3}
@@ -227,7 +312,7 @@ export function MenuItemForm({
             <strong>Imagen del producto</strong>
             <p className="muted">Opcional. JPG, PNG o WebP hasta 10 MB.</p>
           </div>
-          {hasPendingImageChange ? <span className="muted">Se guardará al confirmar.</span> : null}
+          {hasPendingImageChange ? <span className="muted">{busy ? "Procesando..." : "Lista para guardar"}</span> : null}
         </div>
         <div className="digital-menu-image-field__preview">
           {previewImageUrl ? (
@@ -237,9 +322,14 @@ export function MenuItemForm({
               src={previewImageUrl}
             />
           ) : (
-            <div className="digital-menu-image-field__empty">Sin foto cargada</div>
+            <div className="digital-menu-image-field__empty">{imageStatus}</div>
           )}
         </div>
+        {previewImageUrl ? (
+          <p aria-live="polite" className="digital-menu-image-field__status muted">
+            {imageStatus}
+          </p>
+        ) : null}
         <input
           accept={ACCEPTED_PRODUCT_IMAGE_TYPES.join(",")}
           aria-label="Imagen del producto"

@@ -198,7 +198,9 @@ describe("Owner shell", () => {
       </AppearanceProvider>,
     );
 
-    await screen.findByText("Hola, Demo Biz 👋");
+    await screen.findByRole("heading", {name: "Demo Biz"});
+    expect(screen.getByText("Gestioná tu carta y seguí la actividad del negocio.")).toBeTruthy();
+    expect(screen.queryByText(/Hola,/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
     const drawer = screen.getByRole("dialog", {name: "Nambre"});
@@ -261,7 +263,7 @@ describe("Owner shell", () => {
       </AppearanceProvider>,
     );
 
-    await screen.findByText("Hola, Bar Central 👋");
+    await screen.findByRole("heading", {name: "Bar Central"});
 
     const sidebar = container.querySelector("aside");
     if (!(sidebar instanceof HTMLElement)) {
@@ -332,7 +334,7 @@ describe("Owner shell", () => {
       </AppearanceProvider>,
     );
 
-    await screen.findByText("Hola, Minimal Biz 👋");
+    await screen.findByRole("heading", {name: "Minimal Biz"});
     expect(screen.getByTestId("dashboard-layout-minimal")).toBeTruthy();
     expect(screen.queryByTestId("dashboard-layout-maximal")).toBeNull();
     expect(screen.queryByText("Resumen rápido")).toBeNull();

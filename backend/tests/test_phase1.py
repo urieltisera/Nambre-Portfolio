@@ -17,8 +17,11 @@ from sqlalchemy.orm import Session
 from app.auth.security import verify_password
 from app.models import (
     Business,
+    BusinessPlanKey,
     BusinessStatus,
     DestinationType,
+    DigitalMenu,
+    DigitalMenuStatus,
     DynamicLink,
     Membership,
     MembershipRole,
@@ -30,6 +33,10 @@ from app.models import (
 )
 from app.services import analytics_service
 from app.services.qr_service import qr_payload
+from app.services.staging_business_service import (
+    StagingBusinessProvisionError,
+    create_staging_business,
+)
 from app.services.user_admin_service import (
     AdminCreationError,
     CreatePlatformAdminResult,
@@ -346,6 +353,92 @@ def test_seed_script_keeps_dev_credentials_working(client, db: Session, monkeypa
     )
     assert admin_login.status_code == 200
     assert owner_login.status_code == 200
+
+
+def test_create_staging_business_creates_owner_premium_business_and_menu(db: Session) -> None:
+    result = create_staging_business(
+        db,
+        email="staging-owner@example.com",
+        password="staging-pass-123",
+        business_name="Carta Demo",
+    )
+
+    assert result.created_user is True
+    assert result.created_business is True
+    assert result.created_membership is True
+    assert result.created_digital_menu is True
+    assert result.user.email == "staging-owner@example.com"
+    assert result.user.is_active is True
+    assert verify_password("staging-pass-123", result.user.password_hash)
+    assert result.business.slug == "carta-demo"
+    assert result.business.status == BusinessStatus.active
+    assert result.business.plan_key == BusinessPlanKey.premium
+    assert result.business.destination_type == DestinationType.digital_menu
+    assert result.membership.role == MembershipRole.owner
+    assert result.digital_menu.business_id == result.business.id
+    assert result.digital_menu.status == DigitalMenuStatus.draft
+    assert result.dynamic_link is not None
+    assert result.dynamic_link.destination_type == DestinationType.digital_menu
+    assert result.dynamic_link.destination_id == result.digital_menu.id
+
+
+def test_create_staging_business_requires_explicit_reuse(db: Session) -> None:
+    create_staging_business(
+        db,
+        email="staging-owner@example.com",
+        password="first-pass-123",
+        business_name="Carta Demo",
+    )
+
+    with pytest.raises(StagingBusinessProvisionError, match="User already exists"):
+        create_staging_business(
+            db,
+            email="staging-owner@example.com",
+            password="second-pass-456",
+            business_name="Carta Demo",
+        )
+
+
+def test_create_staging_business_reuses_existing_records_explicitly(db: Session) -> None:
+    owner = make_user(db, "reuse-owner@example.com", password="old-pass-123", active=False)
+    business = make_business(db, "Reuse Demo", "reuse-demo")
+    add_membership(db, owner, business, MembershipRole.manager)
+
+    result = create_staging_business(
+        db,
+        email="reuse-owner@example.com",
+        password="new-pass-456",
+        business_name="Reuse Demo",
+        reuse_existing=True,
+    )
+
+    db.refresh(owner)
+    db.refresh(business)
+    membership = db.scalar(
+        select(Membership).where(
+            Membership.user_id == owner.id,
+            Membership.business_id == business.id,
+        )
+    )
+    menu = db.scalar(select(DigitalMenu).where(DigitalMenu.business_id == business.id))
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+
+    assert result.created_user is False
+    assert result.created_business is False
+    assert result.created_membership is False
+    assert result.created_digital_menu is True
+    assert result.promoted_membership_to_owner is True
+    assert owner.is_active is True
+    assert verify_password("new-pass-456", owner.password_hash)
+    assert business.plan_key == BusinessPlanKey.premium
+    assert business.destination_type == DestinationType.digital_menu
+    assert business.status == BusinessStatus.active
+    assert membership is not None
+    assert membership.role == MembershipRole.owner
+    assert menu is not None
+    assert link is not None
+    assert link.destination_type == DestinationType.digital_menu
+    assert link.destination_id == menu.id
 
 
 def test_pdf_validation_versioning_and_rollback(client, db: Session) -> None:

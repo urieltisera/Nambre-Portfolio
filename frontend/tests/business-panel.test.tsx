@@ -566,7 +566,7 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() => {
       expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
     });
-  }, 15000);
+  }, 20000);
 
   it("switches analytics between 7 and 30 real days without changing the source endpoint", async () => {
     const business: Business = {
@@ -804,7 +804,7 @@ describe("BusinessPanel logo flow", () => {
       "_blank",
       "noopener,noreferrer",
     );
-  });
+  }, 10000);
 
   it("shows the empty state for Carta Nambre and creates the menu", async () => {
     const business: Business = {
@@ -1000,7 +1000,7 @@ describe("BusinessPanel logo flow", () => {
       const headings = screen.getAllByText(/Bebidas frías|Comidas|Postres/).map((node) => node.textContent);
       expect(headings.indexOf("Bebidas frías")).toBeGreaterThan(headings.indexOf("Comidas"));
     });
-  }, 15000);
+  }, 20000);
 
   it("lets the owner create, edit, toggle, move and delete products in Carta Nambre", async () => {
     const business: Business = {

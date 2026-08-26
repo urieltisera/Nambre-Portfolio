@@ -2,10 +2,7 @@
 
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { metadata } from "../app/layout";
-import robots from "../app/robots";
-import sitemap from "../app/sitemap";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LoginForm } from "../components/auth/LoginForm";
 import { AppearanceProvider } from "../components/ui/AppearanceProvider";
 
@@ -28,8 +25,27 @@ function stubMatchMedia(matches = false) {
   })));
 }
 
+async function loadWebModules() {
+  vi.resetModules();
+  const [{ metadata }, { default: robots }, { default: sitemap }] = await Promise.all([
+    import("../app/layout"),
+    import("../app/robots"),
+    import("../app/sitemap"),
+  ]);
+
+  return { metadata, robots, sitemap };
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
+
 describe("web launch surfaces", () => {
-  it("exposes launch metadata with Open Graph and canonical data", () => {
+  it("exposes launch metadata with Open Graph and canonical data", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("SITE_URL", "https://menus.nambre.test");
+    const { metadata } = await loadWebModules();
     const images = Array.isArray(metadata.openGraph?.images)
       ? metadata.openGraph.images
       : metadata.openGraph?.images
@@ -42,14 +58,17 @@ describe("web launch surfaces", () => {
     expect(metadata.description).toContain("carta digital");
     expect(images[0]).toMatchObject({
       alt: "Identidad visual de Nambre sobre fondo teal",
-      url: "http://localhost:3000/opengraph-image",
+      url: "https://menus.nambre.test/opengraph-image",
     });
     expect(metadata.alternates?.canonical).toBe("/");
   });
 
-  it("publishes robots rules for public and private surfaces", () => {
+  it("publishes robots rules for public and private surfaces", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("SITE_URL", "https://menus.nambre.test");
+    const { robots } = await loadWebModules();
     const result = robots();
-    expect(result.sitemap).toBe("http://localhost:3000/sitemap.xml");
+    expect(result.sitemap).toBe("https://menus.nambre.test/sitemap.xml");
     expect(result.rules).toEqual([
       {
         allow: ["/", "/privacy", "/terms", "/acceptable-use", "/cookies-analytics", "/ai-policy"],
@@ -59,14 +78,17 @@ describe("web launch surfaces", () => {
     ]);
   });
 
-  it("publishes a sitemap with the public routes only", () => {
+  it("publishes a sitemap with the public routes only", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("SITE_URL", "https://menus.nambre.test");
+    const { sitemap } = await loadWebModules();
     expect(sitemap().map((entry) => entry.url)).toEqual([
-      "http://localhost:3000/",
-      "http://localhost:3000/privacy",
-      "http://localhost:3000/terms",
-      "http://localhost:3000/acceptable-use",
-      "http://localhost:3000/cookies-analytics",
-      "http://localhost:3000/ai-policy",
+      "https://menus.nambre.test/",
+      "https://menus.nambre.test/privacy",
+      "https://menus.nambre.test/terms",
+      "https://menus.nambre.test/acceptable-use",
+      "https://menus.nambre.test/cookies-analytics",
+      "https://menus.nambre.test/ai-policy",
     ]);
   });
 

@@ -24,6 +24,7 @@ Frontend: `http://localhost:3000`
 La recuperación de contraseña usa SMTP genérico configurable por variables de entorno. Para un deploy real en Contabo faltará definir:
 
 - `FRONTEND_BASE_URL`
+- `SITE_URL` o, si se reutiliza la estrategia actual, asegurar que el frontend reciba `FRONTEND_BASE_URL` también durante `docker build`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
@@ -34,6 +35,8 @@ La recuperación de contraseña usa SMTP genérico configurable por variables de
 - `SMTP_TIMEOUT_SECONDS`
 
 Sin esas credenciales, el backend mantiene la respuesta pública genérica y no expone enumeración de usuarios, pero no podrá entregar el email real.
+
+Para el frontend productivo, `getSiteUrl()` resuelve `SITE_URL -> FRONTEND_BASE_URL -> NEXT_PUBLIC_SITE_URL`. En producción debe existir una URL pública válida, por ejemplo `FRONTEND_BASE_URL=https://nambre.com.ar`, y el mecanismo de build/deploy del contenedor debe inyectarla tanto al build como al runtime.
 
 Credenciales de seed:
 

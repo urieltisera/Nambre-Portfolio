@@ -950,6 +950,56 @@ def test_replacing_menu_pdf_does_not_change_logo_url(client, db: Session) -> Non
     assert business_after_second_menu.json()["logo_url"] == f"/logos/{business.id}"
 
 
+def test_legacy_logo_remains_valid_for_menu_and_qr_without_reupload(client, db: Session) -> None:
+    owner = make_user(db, "owner-legacy-logo@example.com")
+    business = make_business(db, "Legacy Logo", "legacy-logo")
+    add_membership(db, owner, business, MembershipRole.owner)
+
+    business.logo_url = f"/logos/{business.id}"
+    business.menu_logo_url = None
+    business.qr_logo_url = None
+    business.use_menu_logo_for_qr = True
+    db.add(business)
+    db.commit()
+
+    storage = LocalStorage()
+    storage.save_bytes(storage.logo_key(business.id, ".png"), png_logo_bytes((0, 180, 90, 255)))
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/menu/replace",
+        headers=auth_headers(owner),
+        files=[pdf_file(PDF_V1, "menu.pdf")],
+    )
+    assert menu.status_code == 200
+
+    business_payload = client.get(f"/api/businesses/{business.id}", headers=auth_headers(owner))
+    assert business_payload.status_code == 200
+    assert business_payload.json()["logo_url"] == f"/logos/{business.id}"
+    assert business_payload.json()["menu_logo_url"] is None
+    assert business_payload.json()["qr_logo_url"] is None
+    assert business_payload.json()["use_menu_logo_for_qr"] is True
+
+    public_logo = client.get(f"/logos/{business.id}")
+    assert public_logo.status_code == 200
+    assert public_logo.headers["cache-control"] == "no-store"
+
+    generated = client.post(
+        f"/api/businesses/{business.id}/qr/generate",
+        headers=auth_headers(owner),
+    )
+    assert generated.status_code == 200
+    branded_png = client.get(
+        next(
+            item["asset_url"]
+            for item in generated.json()
+            if item["qr_type"] == "branded" and item["asset_url"].endswith(".png")
+        ),
+        headers=auth_headers(owner),
+    )
+    assert branded_png.status_code == 200
+    assert image_center_pixel(branded_png.content)[1] > image_center_pixel(branded_png.content)[0]
+
+
 def test_full_acceptance_scenario_and_cross_business_write_forbidden(client, db: Session) -> None:
     owner_a = make_user(db, "bar@example.com")
     owner_b = make_user(db, "b@example.com")

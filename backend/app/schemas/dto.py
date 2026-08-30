@@ -67,6 +67,9 @@ class BusinessCreate(BaseModel):
     name: str
     slug: str
     logo_url: str | None = None
+    menu_logo_url: str | None = None
+    qr_logo_url: str | None = None
+    use_menu_logo_for_qr: bool = True
     plan_key: BusinessPlanKey = BusinessPlanKey.essential
     destination_type: DestinationType = DestinationType.menu_pdf
     external_url: str | None = None
@@ -76,6 +79,9 @@ class BusinessCreate(BaseModel):
 class BusinessPatch(BaseModel):
     name: str | None = None
     logo_url: str | None = None
+    menu_logo_url: str | None = None
+    qr_logo_url: str | None = None
+    use_menu_logo_for_qr: bool | None = None
     plan_key: BusinessPlanKey | None = None
     destination_type: DestinationType | None = None
     external_url: str | None = None
@@ -95,6 +101,9 @@ class BusinessOut(BaseModel):
     name: str
     slug: str
     logo_url: str | None
+    menu_logo_url: str | None
+    qr_logo_url: str | None
+    use_menu_logo_for_qr: bool
     plan_key: BusinessPlanKey
     features: BusinessFeaturesOut
     destination_type: DestinationType
@@ -455,6 +464,7 @@ class PublicBusinessSummaryOut(BaseModel):
     id: str
     name: str
     logo_url: str | None
+    menu_logo_url: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -175,13 +175,20 @@ def _svg_dimensions(root: ET.Element) -> tuple[float, float]:
 
 
 def _logo_path(business: Business | None) -> Path | None:
-    if business is None or not business.logo_url:
+    if business is None:
         return None
-    prefix = f"/logos/{business.id}"
-    if business.logo_url != prefix:
-        return None
-    root = Path(get_settings().storage_path) / "businesses" / business.id / "logo"
-    for candidate in root.glob("logo.*"):
-        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg"}:
-            return candidate
+    roots: list[Path] = []
+    if business.use_menu_logo_for_qr:
+        roots.append(Path(get_settings().storage_path) / "businesses" / business.id / "logo")
+    else:
+        if business.qr_logo_url == f"/logos/{business.id}/qr":
+            roots.append(Path(get_settings().storage_path) / "businesses" / business.id / "qr-logo")
+        if business.menu_logo_url == f"/logos/{business.id}":
+            roots.append(Path(get_settings().storage_path) / "businesses" / business.id / "logo")
+        if business.logo_url == f"/logos/{business.id}":
+            roots.append(Path(get_settings().storage_path) / "businesses" / business.id / "logo")
+    for root in roots:
+        for candidate in root.glob("logo.*"):
+            if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                return candidate
     return None

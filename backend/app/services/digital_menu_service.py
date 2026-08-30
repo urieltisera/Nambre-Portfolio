@@ -616,7 +616,8 @@ def _build_page_payload(
         "business": {
             "id": business.id,
             "name": business.name,
-            "logo_url": business.logo_url,
+            "logo_url": business.effective_menu_logo_url,
+            "menu_logo_url": business.effective_menu_logo_url,
         },
         "menu": _serialize_menu(menu),
         "theme": dict(menu.theme),

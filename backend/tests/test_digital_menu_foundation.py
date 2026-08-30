@@ -948,6 +948,88 @@ def test_draft_preview_publish_flow_keeps_public_snapshot_stable(client, db: Ses
     assert public_v2.json()["categories"][0]["items"][0]["price"] == "1200.00"
 
 
+def test_deleting_draft_item_keeps_published_snapshot_stable_until_republish(
+    client, db: Session
+) -> None:
+    owner = make_user(db, "draft-delete-owner@example.com")
+    business = make_business(
+        db, "Draft Delete Biz", "draft-delete-biz", plan_key=BusinessPlanKey.premium
+    )
+    add_membership(db, owner, business, MembershipRole.owner)
+    headers = auth_headers(owner)
+
+    menu = client.post(
+        f"/api/businesses/{business.id}/digital-menu",
+        headers=headers,
+        json={"name": "Carta draft"},
+    ).json()
+    category = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories",
+        headers=headers,
+        json={"name": "Principales", "position": 0},
+    ).json()
+    item = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/categories/{category['id']}/items",
+        headers=headers,
+        json={"name": "Milanesa", "price": "1000.00", "currency": "ARS", "position": 0},
+    )
+    assert item.status_code == 200
+
+    switched = client.patch(
+        f"/api/businesses/{business.id}",
+        headers=headers,
+        json={"destination_type": "digital_menu"},
+    )
+    assert switched.status_code == 200
+    link = db.scalar(select(DynamicLink).where(DynamicLink.business_id == business.id))
+    assert link is not None
+
+    published_v1 = _publish_menu(client, business.id, menu["id"], headers)
+    assert published_v1["version"] == 1
+
+    public_v1 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_v1.status_code == 200
+    assert [published_item["name"] for published_item in public_v1.json()["categories"][0]["items"]] == [
+        "Milanesa"
+    ]
+
+    deleted = client.delete(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/items/{item.json()['id']}",
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+
+    menu_state = client.get(f"/api/businesses/{business.id}/digital-menu", headers=headers)
+    assert menu_state.status_code == 200
+    assert menu_state.json()["has_unpublished_changes"] is True
+    assert menu_state.json()["published_version"] == 1
+
+    preview_after_delete = client.get(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/preview",
+        headers=headers,
+    )
+    assert preview_after_delete.status_code == 200
+    assert preview_after_delete.json()["categories"][0]["items"] == []
+
+    public_still_v1 = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_still_v1.status_code == 200
+    assert [published_item["name"] for published_item in public_still_v1.json()["categories"][0]["items"]] == [
+        "Milanesa"
+    ]
+
+    republish_empty = client.post(
+        f"/api/businesses/{business.id}/digital-menu/{menu['id']}/publish",
+        headers=headers,
+    )
+    assert republish_empty.status_code == 400
+
+    public_after_failed_republish = client.get(f"/api/public/digital-menus/{link.public_code}")
+    assert public_after_failed_republish.status_code == 200
+    assert [published_item["name"] for published_item in public_after_failed_republish.json()["categories"][0]["items"]] == [
+        "Milanesa"
+    ]
+
+
 def test_publish_retries_once_after_snapshot_version_conflict(
     client, db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

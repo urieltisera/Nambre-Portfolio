@@ -171,7 +171,12 @@ from app.storage.local import LocalStorage
 router = APIRouter()
 _login_attempts: dict[str, deque[datetime]] = defaultdict(deque)
 _password_reset_attempts: dict[str, deque[datetime]] = defaultdict(deque)
-LOGO_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
+LOGO_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/webp": ".webp",
+}
 
 
 @router.get("/health")
@@ -484,6 +489,8 @@ def patch_business(
         if data:
             business = require_operable_business(db, user, business_id)
     data = _validated_business_patch(data)
+    if "logo_url" in data and "menu_logo_url" not in data:
+        data["menu_logo_url"] = data["logo_url"]
     next_plan_key = data.get("plan_key", business.plan_key)
     if (
         data.get("destination_type") == DestinationType.digital_menu
@@ -492,6 +499,7 @@ def patch_business(
         raise HTTPException(status_code=403, detail="Feature not enabled: digital_menu")
     for key, value in data.items():
         setattr(business, key, value)
+    business.logo_url = business.effective_menu_logo_url
     sync_current_destination(db, business)
     business.updated_at = datetime.now(UTC)
     db.commit()
@@ -505,14 +513,57 @@ async def upload_logo(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Business:
+    return await _upload_business_logo(business_id, file, db, user, target="menu")
+
+
+@router.delete("/api/businesses/{business_id}/logo", response_model=BusinessOut)
+def delete_logo(
+    business_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Business:
+    return _delete_business_logo(business_id, db, user, target="menu")
+
+
+@router.post("/api/businesses/{business_id}/qr-logo", response_model=BusinessOut)
+async def upload_qr_logo(
+    business_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Business:
+    return await _upload_business_logo(business_id, file, db, user, target="qr")
+
+
+@router.delete("/api/businesses/{business_id}/qr-logo", response_model=BusinessOut)
+def delete_qr_logo(
+    business_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Business:
+    return _delete_business_logo(business_id, db, user, target="qr")
+
+
+async def _upload_business_logo(
+    business_id: str,
+    file: UploadFile,
+    db: Session,
+    user: User,
+    *,
+    target: str,
+) -> Business:
     _enforce_legal_acceptance(db, user, business_id)
     require_business_permission(db, user, business_id, BusinessPermission.manage_logo)
     business = require_operable_business(db, user, business_id)
     suffix = LOGO_TYPES.get(file.content_type or "")
     if suffix is None:
-        raise HTTPException(status_code=400, detail="Only PNG or JPEG logos are allowed")
+        raise HTTPException(status_code=400, detail="Only PNG, JPEG or WebP logos are allowed")
     storage = LocalStorage()
-    key = storage.logo_key(business_id, suffix)
+    key = (
+        storage.logo_key(business_id, suffix)
+        if target == "menu"
+        else storage.qr_logo_key(business_id, suffix)
+    )
     size = await storage.save_upload(file, key)
     if size == 0:
         storage.open(key).unlink(missing_ok=True)
@@ -533,8 +584,12 @@ async def upload_logo(
     ) as exc:
         storage.open(key).unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from exc
-    _delete_existing_logo_files(business_id, keep=storage.open(key))
-    business.logo_url = f"/logos/{business.id}"
+    _delete_existing_logo_files(business_id, keep=storage.open(key), target=target)
+    if target == "menu":
+        business.menu_logo_url = f"/logos/{business.id}"
+        business.logo_url = business.menu_logo_url
+    else:
+        business.qr_logo_url = f"/logos/{business.id}/qr"
     business.updated_at = datetime.now(UTC)
     db.commit()
     return business
@@ -542,12 +597,24 @@ async def upload_logo(
 
 @router.get("/logos/{business_id}", response_model=None)
 def public_logo(business_id: str, db: Session = Depends(get_db)) -> FileResponse:
+    return _public_logo_file(business_id, db, target="menu")
+
+
+@router.get("/logos/{business_id}/qr", response_model=None)
+def public_qr_logo(business_id: str, db: Session = Depends(get_db)) -> FileResponse:
+    return _public_logo_file(business_id, db, target="qr")
+
+
+def _public_logo_file(business_id: str, db: Session, *, target: str) -> FileResponse:
     business = db.get(Business, business_id)
     if business is None or business.status == BusinessStatus.suspended:
         raise HTTPException(status_code=404, detail="Not found")
-    root = Path(get_settings().storage_path) / "businesses" / business_id / "logo"
+    if target == "qr" and not business.use_menu_logo_for_qr and business.effective_qr_logo_url:
+        root = Path(get_settings().storage_path) / "businesses" / business_id / "qr-logo"
+    else:
+        root = Path(get_settings().storage_path) / "businesses" / business_id / "logo"
     for candidate in root.glob("logo.*"):
-        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
             return FileResponse(candidate, headers={"Cache-Control": "no-store"})
     raise HTTPException(status_code=404, detail="Not found")
 
@@ -1496,11 +1563,35 @@ def _rate_limit_keys(email: str, request: Request) -> set[str]:
     return keys
 
 
-def _delete_existing_logo_files(business_id: str, keep: Path | None = None) -> None:
-    root = Path(get_settings().storage_path) / "businesses" / business_id / "logo"
+def _delete_existing_logo_files(
+    business_id: str, keep: Path | None = None, *, target: str = "menu"
+) -> None:
+    root_name = "logo" if target == "menu" else "qr-logo"
+    root = Path(get_settings().storage_path) / "businesses" / business_id / root_name
     for candidate in root.glob("logo.*"):
-        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg"} and candidate != keep:
+        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} and candidate != keep:
             candidate.unlink(missing_ok=True)
+
+
+def _delete_business_logo(
+    business_id: str,
+    db: Session,
+    user: User,
+    *,
+    target: str,
+) -> Business:
+    _enforce_legal_acceptance(db, user, business_id)
+    require_business_permission(db, user, business_id, BusinessPermission.manage_logo)
+    business = require_operable_business(db, user, business_id)
+    _delete_existing_logo_files(business_id, target=target)
+    if target == "menu":
+        business.menu_logo_url = None
+        business.logo_url = None
+    else:
+        business.qr_logo_url = None
+    business.updated_at = datetime.now(UTC)
+    db.commit()
+    return business
 
 
 def _inline_content_disposition(filename: str | PathLike[str]) -> str:

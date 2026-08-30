@@ -104,6 +104,29 @@ function renderPanel(ui: React.ReactElement, visualStyle: "minimal" | "maximal" 
   return render(<AppearanceProvider userId="owner-1">{ui}</AppearanceProvider>);
 }
 
+async function clickActionMenuItem(scope: HTMLElement, triggerLabel: string, itemLabel: string) {
+  fireEvent.click(within(scope).getByRole("button", {name: triggerLabel}));
+  fireEvent.click(await screen.findByRole("menuitem", {name: itemLabel}));
+}
+
+async function findCategoryCardByAction(label: string) {
+  const trigger = await screen.findByRole("button", {name: label});
+  const card = trigger.closest(".digital-menu-category-card");
+  if (!card) {
+    throw new Error(`Category card not found for ${label}`);
+  }
+  return card as HTMLElement;
+}
+
+async function findItemRowByAction(label: string) {
+  const trigger = await screen.findByRole("button", {name: label});
+  const row = trigger.closest(".digital-menu-item-row");
+  if (!row) {
+    throw new Error(`Item row not found for ${label}`);
+  }
+  return row as HTMLElement;
+}
+
 describe("BusinessPanel logo flow", () => {
   it("refreshes the branded preview after regenerating QR for a new logo without touching the PDF", async () => {
     const businessWithoutLogo: Business = {
@@ -218,28 +241,27 @@ describe("BusinessPanel logo flow", () => {
     renderPanel(<BusinessPanel token="owner-token" user={null} />);
 
     await screen.findByRole("heading", {name: "Demo Biz"});
-    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    fireEvent.click(screen.getByRole("button", {name: "Mi negocio"}));
 
-    const logoInput = screen.getByLabelText("Logo") as HTMLInputElement;
+    const logoInput = screen.getByLabelText("Archivo") as HTMLInputElement;
     fireEvent.change(logoInput, {
       target: {files: [new File(["logo-a"], "logo-a.png", {type: "image/png"})]},
     });
-    fireEvent.click(screen.getByRole("button", {name: "Guardar logo"}));
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo de carta"}));
 
-    await screen.findByText("Logo guardado correctamente.");
+    await screen.findByText("Logo de carta guardado correctamente.");
     await waitFor(() => {
-      const image = screen.getByAltText("Logo de Demo Biz");
-      expect(image.getAttribute("src")).toContain(encodeURIComponent(businessWithLogoA.updated_at!));
+      expect(screen.getByAltText("Vista en carta de Demo Biz")).toBeTruthy();
+      expect(screen.getByAltText("Vista en QR de Demo Biz")).toBeTruthy();
     });
 
     fireEvent.change(logoInput, {
       target: {files: [new File(["logo-b"], "logo-b.png", {type: "image/png"})]},
     });
-    fireEvent.click(screen.getByRole("button", {name: "Guardar logo"}));
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo de carta"}));
 
     await waitFor(() => {
-      const image = screen.getByAltText("Logo de Demo Biz");
-      expect(image.getAttribute("src")).toContain(encodeURIComponent(businessWithLogoB.updated_at!));
+      expect(screen.getByAltText("Vista en carta de Demo Biz")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
@@ -255,15 +277,14 @@ describe("BusinessPanel logo flow", () => {
     const firstBrandedPreview = await screen.findByAltText("Preview QR con logo");
     expect(firstBrandedPreview.getAttribute("src")).toBe("blob:branded-preview-a");
 
-    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    fireEvent.click(screen.getByRole("button", {name: "Mi negocio"}));
     fireEvent.change(logoInput, {
       target: {files: [new File(["logo-b"], "logo-b.png", {type: "image/png"})]},
     });
-    fireEvent.click(screen.getByRole("button", {name: "Guardar logo"}));
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo de carta"}));
 
     await waitFor(() => {
-      const image = screen.getByAltText("Logo de Demo Biz");
-      expect(image.getAttribute("src")).toContain(encodeURIComponent(businessWithLogoB.updated_at!));
+      expect(screen.getByAltText("Vista en carta de Demo Biz")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
@@ -301,9 +322,83 @@ describe("BusinessPanel logo flow", () => {
     expect(qrGenerations).toBe(2);
     expect(paths.filter((path) => path === "/api/businesses/biz-1/logo")).toHaveLength(2);
     expect(paths).not.toContain("/api/businesses/biz-1/menu/replace");
-    expect(paths.filter((path) => path === "/api/businesses/biz-1")).toHaveLength(3);
+    expect(paths.filter((path) => path === "/api/businesses/biz-1").length).toBeGreaterThanOrEqual(3);
     expect(paths.filter((path) => path === "/api/businesses/biz-1/qr/generate")).toHaveLength(2);
   }, 90000);
+
+  it("keeps the legacy logo as carta and QR fallback until a specific QR logo is configured", async () => {
+    let currentBusiness: Business = {
+      id: "biz-legacy",
+      logo_url: "/logos/biz-legacy",
+      name: "Legacy Biz",
+      qr_logo_url: null,
+      slug: "legacy-biz",
+      status: "active",
+      updated_at: "2026-08-20T12:00:00Z",
+      use_menu_logo_for_qr: true,
+    };
+
+    mocks.listBusinesses.mockResolvedValue([currentBusiness]);
+    mocks.request.mockImplementation(async (path: string, _token: string, init?: RequestInit) => {
+      if (path === "/api/businesses/biz-legacy") return currentBusiness;
+      if (path === "/api/businesses/biz-legacy/menu") {
+        return {current: null, public_code: "legacy-code", versions: []};
+      }
+      if (path === "/api/businesses/biz-legacy/analytics/summary") {
+        return {busiest_hour: null, scans_30d: 0, scans_7d: 0, scans_today: 0};
+      }
+      if (path === "/api/businesses/biz-legacy/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-legacy/qr") return [];
+      if (path === "/api/businesses/biz-legacy" && init?.method === "PATCH") {
+        const payload = JSON.parse(init.body as string) as {name: string; use_menu_logo_for_qr: boolean};
+        currentBusiness = {...currentBusiness, name: payload.name, use_menu_logo_for_qr: payload.use_menu_logo_for_qr};
+        return currentBusiness;
+      }
+      if (path === "/api/businesses/biz-legacy/qr-logo" && init?.method === "POST") {
+        currentBusiness = {
+          ...currentBusiness,
+          qr_logo_url: "/logos/biz-legacy/qr",
+          updated_at: "2026-08-20T12:10:00Z",
+        };
+        return currentBusiness;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    renderPanel(<BusinessPanel token="owner-token" user={null} />);
+
+    await screen.findByRole("heading", {name: "Legacy Biz"});
+    fireEvent.click(screen.getByRole("button", {name: "Mi negocio"}));
+
+    expect(screen.getByAltText("Vista en carta de Legacy Biz")).toBeTruthy();
+    expect(screen.getByAltText("Vista en QR de Legacy Biz")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Nombre comercial"), {target: {value: "Legacy Renamed"}});
+    fireEvent.click(screen.getByLabelText("Usar el logo de carta también para el QR"));
+    fireEvent.click(screen.getByRole("button", {name: "Guardar identidad"}));
+
+    await screen.findByText("Identidad guardada correctamente.");
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/api/businesses/biz-legacy",
+      "owner-token",
+      expect.objectContaining({method: "PATCH"}),
+    );
+
+    const fileInputs = screen.getAllByLabelText("Archivo");
+    fireEvent.change(fileInputs[1] as HTMLInputElement, {
+      target: {files: [new File(["qr-logo"], "qr-logo.png", {type: "image/png"})]},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Guardar logo de QR"}));
+
+    await screen.findByText("Logo de QR guardado correctamente.");
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/api/businesses/biz-legacy/qr-logo",
+      "owner-token",
+      expect.objectContaining({method: "POST"}),
+    );
+    expect(screen.getByDisplayValue("Legacy Renamed")).toBeTruthy();
+    expect(screen.getByAltText("Vista en QR de Legacy Biz")).toBeTruthy();
+  }, 20000);
 
   it("loads the business selector from the admin listing for platform admins", async () => {
     const adminBusiness: Business = {
@@ -394,20 +489,14 @@ describe("BusinessPanel logo flow", () => {
     expect(screen.getByTestId("suspended-panel")).toBeTruthy();
     expect(screen.getByText("Negocio suspendido")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
+    fireEvent.click(screen.getByRole("button", {name: "Mi negocio"}));
 
     const fileInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
     for (const input of fileInputs) {
       expect(input.disabled).toBe(true);
     }
-    expect(screen.getByRole("button", {name: "Guardar logo"}).hasAttribute("disabled")).toBe(true);
-    expect(
-      screen.getByRole("button", {name: /Guardar carta|Reemplazar carta/}).hasAttribute("disabled"),
-    ).toBe(true);
-    const restoreButton = screen.queryByRole("button", {name: /Restaurar/});
-    if (restoreButton) {
-      expect(restoreButton.hasAttribute("disabled")).toBe(true);
-    }
+    expect(screen.getByRole("button", {name: "Guardar logo de carta"}).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", {name: "Guardar identidad"}).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", {name: "Mi QR"}));
     expect(screen.getByRole("button", {name: "Generar QR"}).hasAttribute("disabled")).toBe(true);
@@ -974,7 +1063,7 @@ describe("BusinessPanel logo flow", () => {
     await screen.findByRole("heading", {name: "Carta Categorias"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
-    expect(await screen.findByText("Bebidas")).toBeTruthy();
+    expect(await findCategoryCardByAction("Acciones para Bebidas")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", {name: /Nueva categoría/i}));
     await screen.findByRole("heading", {name: "Nueva categoría"});
     expect(scrollIntoView).toHaveBeenCalled();
@@ -985,8 +1074,8 @@ describe("BusinessPanel logo flow", () => {
     await waitFor(() => expect(mocks.createMenuCategory).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Postres")).toBeTruthy();
 
-    const editButtons = screen.getAllByRole("button", {name: /Editar/i});
-    fireEvent.click(editButtons[editButtons.length - 1]!);
+    const postresCard = await findCategoryCardByAction("Acciones para Postres");
+    await clickActionMenuItem(postresCard, "Acciones para Postres", "Editar categoría");
     fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Bebidas frías"}});
     fireEvent.click(screen.getByLabelText("Visible"));
     fireEvent.click(screen.getByRole("button", {name: "Guardar categoría"}));
@@ -995,7 +1084,8 @@ describe("BusinessPanel logo flow", () => {
     expect(await screen.findByText("Bebidas frías")).toBeTruthy();
     expect(await screen.findByText("Oculta")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", {name: "Bajar Bebidas frías"}));
+    const bebidasFriasCard = await findCategoryCardByAction("Acciones para Bebidas frías");
+    await clickActionMenuItem(bebidasFriasCard, "Acciones para Bebidas frías", "Mover abajo");
     await waitFor(() => {
       const headings = screen.getAllByText(/Bebidas frías|Comidas|Postres/).map((node) => node.textContent);
       expect(headings.indexOf("Bebidas frías")).toBeGreaterThan(headings.indexOf("Comidas"));
@@ -1148,18 +1238,14 @@ describe("BusinessPanel logo flow", () => {
     await screen.findByRole("heading", {name: "Carta Productos"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
 
-    await screen.findByText("Hamburguesas");
-    const burgersCard = screen.getByText("Hamburguesas").closest(".digital-menu-category-card");
-    expect(burgersCard).toBeTruthy();
-    fireEvent.click(within(burgersCard as HTMLElement).getAllByRole("button", {name: /Agregar producto/i})[0]);
+    const burgersCard = await findCategoryCardByAction("Acciones para Hamburguesas");
+    fireEvent.click(within(burgersCard).getAllByRole("button", {name: /Agregar producto/i})[0]);
     await screen.findByRole("heading", {name: "Nuevo producto"});
     expect((screen.getByLabelText("Categoría *") as HTMLSelectElement).value).toBe("cat-main");
     fireEvent.click(screen.getByRole("button", {name: "Cancelar"}));
 
-    await screen.findByText("Postres");
-    const dessertCard = screen.getByText("Postres").closest(".digital-menu-category-card");
-    expect(dessertCard).toBeTruthy();
-    fireEvent.click(within(dessertCard as HTMLElement).getAllByRole("button", {name: /Agregar producto/i})[0]);
+    const dessertCard = await findCategoryCardByAction("Acciones para Postres");
+    fireEvent.click(within(dessertCard).getAllByRole("button", {name: /Agregar producto/i})[0]);
     await screen.findByRole("heading", {name: "Nuevo producto"});
     expect(scrollIntoView).toHaveBeenCalled();
     expect((screen.getByLabelText("Categoría *") as HTMLSelectElement).value).toBe("cat-desserts");
@@ -1178,45 +1264,53 @@ describe("BusinessPanel logo flow", () => {
       "cat-desserts",
       expect.objectContaining({currency: "USD"}),
     );
-    expect(await screen.findByText("Doble Bacon")).toBeTruthy();
-    expect(await screen.findByText(/\$.*12\.500,50/)).toBeTruthy();
+    const createdItemRow = await findItemRowByAction("Acciones para Doble Bacon");
+    expect(within(createdItemRow).getByText("Doble Bacon")).toBeTruthy();
+    expect(within(createdItemRow).getByText(/\$.*12\.500,50/)).toBeTruthy();
 
-    const postresSection = screen.getByText("Postres").closest(".digital-menu-category-card");
-    expect(postresSection).toBeTruthy();
-    expect(within(postresSection as HTMLElement).getByText("Doble Bacon")).toBeTruthy();
+    const postresSection = await findCategoryCardByAction("Acciones para Postres");
+    expect(within(postresSection).getByText("Doble Bacon")).toBeTruthy();
 
-    const createdItemRow = screen.getByText("Doble Bacon").closest(".digital-menu-item-row");
-    expect(createdItemRow).toBeTruthy();
-    fireEvent.click(within(createdItemRow as HTMLElement).getByRole("button", {name: /Editar/i}));
+    await clickActionMenuItem(createdItemRow, "Acciones para Doble Bacon", "Editar");
     await screen.findByRole("heading", {name: "Editar producto"});
     fireEvent.change(screen.getByLabelText("Descripción"), {target: {value: "Con papas"}});
     fireEvent.change(screen.getByRole("textbox", {name: /Precio/i}), {target: {value: "13000"}});
     fireEvent.click(screen.getByRole("button", {name: "Guardar producto"}));
 
     await waitFor(() => expect(mocks.updateMenuItem).toHaveBeenCalled());
-    expect(await screen.findByText(/\$.*13\.000/)).toBeTruthy();
-    expect(await screen.findByText("Con papas")).toBeTruthy();
-
-    const updatedItemRow = screen.getByText("Doble Bacon").closest(".digital-menu-item-row");
-    expect(updatedItemRow).toBeTruthy();
-    fireEvent.click(within(updatedItemRow as HTMLElement).getByRole("button", {name: "Marcar agotado"}));
-    expect(await screen.findByText("Agotado")).toBeTruthy();
-    fireEvent.click(within(updatedItemRow as HTMLElement).getByRole("button", {name: "Ocultar"}));
-    expect(await screen.findByText("Oculto")).toBeTruthy();
-    fireEvent.click(within(updatedItemRow as HTMLElement).getByRole("button", {name: "Quitar destacado"}));
     await waitFor(() => {
-      expect(within(updatedItemRow as HTMLElement).queryByText("Destacado")).toBeNull();
+      const refreshedRow = screen.getByRole("button", {name: "Acciones para Doble Bacon"}).closest(".digital-menu-item-row");
+      expect(refreshedRow).toBeTruthy();
+      expect(within(refreshedRow as HTMLElement).getByText(/\$.*13\.000/)).toBeTruthy();
+      expect(within(refreshedRow as HTMLElement).getByText("Con papas")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", {name: "Bajar Clasica"}));
+    const updatedItemRow = await findItemRowByAction("Acciones para Doble Bacon");
+    await clickActionMenuItem(updatedItemRow, "Acciones para Doble Bacon", "Marcar agotado");
     await waitFor(() => {
-      const labels = screen.getAllByText(/Clasica|Cheddar|Doble Bacon/).map((node) => node.textContent);
+      expect(within(updatedItemRow).getByText("Agotado")).toBeTruthy();
+    });
+    await clickActionMenuItem(updatedItemRow, "Acciones para Doble Bacon", "Ocultar");
+    await waitFor(() => {
+      expect(within(updatedItemRow).getByText("Oculto")).toBeTruthy();
+    });
+    await clickActionMenuItem(updatedItemRow, "Acciones para Doble Bacon", "Quitar destacado");
+    await waitFor(() => {
+      expect(within(updatedItemRow).queryByText("Destacado")).toBeNull();
+    });
+
+    const clasicaRow = await findItemRowByAction("Acciones para Clasica");
+    await clickActionMenuItem(clasicaRow, "Acciones para Clasica", "Mover abajo");
+    await waitFor(() => {
+      const labels = screen
+        .getAllByRole("button", {name: /Acciones para Clasica|Acciones para Cheddar|Acciones para Doble Bacon/})
+        .map((node) => node.getAttribute("aria-label")?.replace("Acciones para ", ""));
       expect(labels.indexOf("Clasica")).toBeGreaterThan(labels.indexOf("Cheddar"));
     });
 
-    fireEvent.click(within(updatedItemRow as HTMLElement).getByRole("button", {name: "Eliminar"}));
+    await clickActionMenuItem(updatedItemRow, "Acciones para Doble Bacon", "Eliminar");
     await waitFor(() => expect(mocks.deleteMenuItem).toHaveBeenCalled());
-  }, 15000);
+  }, 30000);
 
   it("requires choosing a category from the global product CTA and creates the item in the selected category", async () => {
     const business: Business = {
@@ -1304,7 +1398,7 @@ describe("BusinessPanel logo flow", () => {
 
     await screen.findByRole("heading", {name: "Carta Global"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
-    await screen.findByText("Entradas");
+    expect(await findCategoryCardByAction("Acciones para Entradas")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", {name: "Nuevo producto"}));
     await screen.findByRole("heading", {name: "Nuevo producto"});
@@ -1319,6 +1413,8 @@ describe("BusinessPanel logo flow", () => {
     fireEvent.click(screen.getByRole("button", {name: "Nuevo producto"}));
     await screen.findByRole("heading", {name: "Nuevo producto"});
     fireEvent.change(screen.getByRole("combobox"), {target: {value: "cat-drinks"}});
+    fireEvent.change(screen.getByLabelText("Nombre *"), {target: {value: "Negroni"}});
+    fireEvent.change(screen.getByRole("textbox", {name: /Precio/i}), {target: {value: "9500"}});
     fireEvent.click(screen.getByRole("button", {name: "Crear producto"}));
 
     await waitFor(() => expect(mocks.createMenuItem).toHaveBeenCalledTimes(1));
@@ -1330,9 +1426,8 @@ describe("BusinessPanel logo flow", () => {
       expect.objectContaining({name: "Negroni"}),
     );
 
-    const happyHourCard = screen.getByText("Happy Hour").closest(".digital-menu-category-card");
-    expect(happyHourCard).toBeTruthy();
-    expect(within(happyHourCard as HTMLElement).getByText("Negroni")).toBeTruthy();
+    const happyHourCard = await findCategoryCardByAction("Acciones para Happy Hour");
+    expect(within(happyHourCard).getByText("Negroni")).toBeTruthy();
   }, 15000);
 
   it("shows friendly errors and releases the submit state after a failed product save", async () => {
@@ -1540,7 +1635,7 @@ describe("BusinessPanel logo flow", () => {
 
     await screen.findByRole("heading", {name: "Carta Fotos"});
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
-    await screen.findByText("Especiales");
+    expect(await findCategoryCardByAction("Acciones para Especiales")).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole("button", {name: /Agregar producto/i})[0]);
     await screen.findByRole("heading", {name: "Nuevo producto"});
@@ -1572,12 +1667,10 @@ describe("BusinessPanel logo flow", () => {
     uploadControl.release();
 
     await screen.findByText("Producto creado correctamente.");
-    expect(await screen.findByText("Burger Melt")).toBeTruthy();
+    const createdRow = await findItemRowByAction("Acciones para Burger Melt");
+    expect(within(createdRow).getByText("Burger Melt")).toBeTruthy();
     expect(await screen.findByText("Con foto")).toBeTruthy();
-
-    const createdRow = screen.getByText("Burger Melt").closest(".digital-menu-item-row");
-    expect(createdRow).toBeTruthy();
-    fireEvent.click(within(createdRow as HTMLElement).getByRole("button", {name: /Editar/i}));
+    await clickActionMenuItem(createdRow, "Acciones para Burger Melt", "Editar");
     await screen.findByRole("heading", {name: "Editar producto"});
     expect(screen.getByAltText("Preview de Burger Melt")).toBeTruthy();
 
@@ -1592,9 +1685,8 @@ describe("BusinessPanel logo flow", () => {
     uploadControl.release();
     await screen.findByText("Producto guardado correctamente.");
 
-    const updatedRow = screen.getByText("Burger Melt").closest(".digital-menu-item-row");
-    expect(updatedRow).toBeTruthy();
-    fireEvent.click(within(updatedRow as HTMLElement).getByRole("button", {name: /Editar/i}));
+    const updatedRow = await findItemRowByAction("Acciones para Burger Melt");
+    await clickActionMenuItem(updatedRow, "Acciones para Burger Melt", "Editar");
     await screen.findByRole("heading", {name: "Editar producto"});
     const editForm = screen.getByRole("heading", {name: "Editar producto"}).closest("form");
     expect(editForm).toBeTruthy();

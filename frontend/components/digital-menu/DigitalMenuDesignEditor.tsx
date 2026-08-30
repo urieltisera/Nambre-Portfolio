@@ -129,7 +129,8 @@ export function DigitalMenuDesignEditor({
       return {
         business: {
           id: business.id,
-          logo_url: business.logo_url,
+          logo_url: business.menu_logo_url ?? business.logo_url,
+          menu_logo_url: business.menu_logo_url ?? business.logo_url,
           name: business.name,
         },
         categories: visibleCategories,
@@ -143,7 +144,8 @@ export function DigitalMenuDesignEditor({
     return {
       business: {
         id: business.id,
-        logo_url: business.logo_url,
+        logo_url: business.menu_logo_url ?? business.logo_url,
+        menu_logo_url: business.menu_logo_url ?? business.logo_url,
         name: business.name,
       },
       categories: [
@@ -189,7 +191,7 @@ export function DigitalMenuDesignEditor({
       },
       theme: draftTheme,
     };
-  }, [business.id, business.logo_url, business.name, categories, draftTheme, items, menu]);
+  }, [business.id, business.logo_url, business.menu_logo_url, business.name, categories, draftTheme, items, menu]);
 
   const saveDisabled =
     busy || !canMutate || hasInvalidHex || Boolean(contrastChecks.blocking) || !hasChanges;

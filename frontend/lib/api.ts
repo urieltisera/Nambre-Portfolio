@@ -15,6 +15,9 @@ export type Business = {
   name: string;
   slug: string;
   logo_url: string | null;
+  menu_logo_url?: string | null;
+  qr_logo_url?: string | null;
+  use_menu_logo_for_qr?: boolean;
   plan_key?: BusinessPlanKey;
   features?: BusinessFeatures;
   destination_type?: "menu_pdf" | "external_url" | "digital_menu" | "promo" | "landing_page";
@@ -69,6 +72,7 @@ export type PublicBusinessSummary = {
   id: string;
   name: string;
   logo_url: string | null;
+  menu_logo_url?: string | null;
 };
 
 export type PublicMenuItem = {

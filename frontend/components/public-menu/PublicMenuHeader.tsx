@@ -12,15 +12,16 @@ export function PublicMenuHeader({
   menu: DigitalMenu;
 }) {
   const showMenuLabel = menu.name.trim().toLowerCase() !== business.name.trim().toLowerCase();
+  const logoUrl = business.menu_logo_url ?? business.logo_url;
 
   return (
     <header className="public-menu-header">
       <div className="public-menu-header__brand">
-        {business.logo_url ? (
+        {logoUrl ? (
           <img
             alt={`Logo de ${business.name}`}
             className="public-menu-header__logo"
-            src={business.logo_url}
+            src={logoUrl}
           />
         ) : (
           <div aria-hidden="true" className="public-menu-header__logo public-menu-header__logo--fallback">

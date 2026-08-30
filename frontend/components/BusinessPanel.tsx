@@ -89,16 +89,21 @@ export function BusinessPanel({
   const [view, setView] = useState<View>("dashboard");
   const [error, setError] = useState("");
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
-  const [selectedLogo, setSelectedLogo] = useState<File | null>(null);
+  const [selectedMenuLogo, setSelectedMenuLogo] = useState<File | null>(null);
+  const [selectedQrLogo, setSelectedQrLogo] = useState<File | null>(null);
   const [uploadingMenu, setUploadingMenu] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingMenuLogo, setUploadingMenuLogo] = useState(false);
+  const [uploadingQrLogo, setUploadingQrLogo] = useState(false);
   const [savingDestination, setSavingDestination] = useState(false);
+  const [savingIdentity, setSavingIdentity] = useState(false);
   const [generatingQr, setGeneratingQr] = useState(false);
   const [menuMessage, setMenuMessage] = useState("");
-  const [logoMessage, setLogoMessage] = useState("");
+  const [identityMessage, setIdentityMessage] = useState("");
   const [destinationMessage, setDestinationMessage] = useState("");
   const [destinationTypeDraft, setDestinationTypeDraft] = useState<BusinessDestination>("menu_pdf");
   const [externalUrlDraft, setExternalUrlDraft] = useState("");
+  const [businessNameDraft, setBusinessNameDraft] = useState("");
+  const [useMenuLogoForQrDraft, setUseMenuLogoForQrDraft] = useState(true);
   const [hasDigitalMenu, setHasDigitalMenu] = useState(false);
   const [qrDownloadError, setQrDownloadError] = useState("");
   const [qrPreviewVersion, setQrPreviewVersion] = useState(0);
@@ -207,7 +212,10 @@ export function BusinessPanel({
     setDestinationTypeDraft(nextDestination);
     setExternalUrlDraft(business?.external_url ?? "");
     setDestinationMessage("");
-  }, [business?.destination_type, business?.external_url, business?.id, canUseDigitalMenu]);
+    setBusinessNameDraft(business?.name ?? "");
+    setUseMenuLogoForQrDraft(business?.use_menu_logo_for_qr ?? true);
+    setIdentityMessage("");
+  }, [business?.destination_type, business?.external_url, business?.id, business?.name, business?.use_menu_logo_for_qr, canUseDigitalMenu]);
 
   useEffect(() => {
     function syncFreshState() {
@@ -255,27 +263,96 @@ export function BusinessPanel({
     }
   }
 
-  async function uploadLogo() {
-    if (!selectedLogo || !businessId) return;
-    setUploadingLogo(true);
-    setLogoMessage("");
+  async function uploadIdentityLogo(target: "menu" | "qr") {
+    const selectedFile = target === "menu" ? selectedMenuLogo : selectedQrLogo;
+    if (!selectedFile || !businessId) return;
+    if (target === "menu") {
+      setUploadingMenuLogo(true);
+    } else {
+      setUploadingQrLogo(true);
+    }
+    setIdentityMessage("");
     const body = new FormData();
-    body.append("file", selectedLogo);
+    body.append("file", selectedFile);
     try {
-      const updated = await request<Business>(`/api/businesses/${businessId}/logo`, token, {
-        method: "POST",
-        body,
+      const updated = await request<Business>(
+        `/api/businesses/${businessId}/${target === "menu" ? "logo" : "qr-logo"}`,
+        token,
+        {
+          method: "POST",
+          body,
+        },
+      );
+      setBusiness(updated);
+      setBusinesses((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      if (target === "menu") {
+        setSelectedMenuLogo(null);
+      } else {
+        setSelectedQrLogo(null);
+      }
+      setIdentityMessage(target === "menu" ? "Logo de carta guardado correctamente." : "Logo de QR guardado correctamente.");
+      await refresh({force: true});
+    } catch (uploadError: unknown) {
+      setIdentityMessage(uploadErrorMessage("logo", uploadError));
+      await refresh({force: true});
+    } finally {
+      if (target === "menu") {
+        setUploadingMenuLogo(false);
+      } else {
+        setUploadingQrLogo(false);
+      }
+    }
+  }
+
+  async function deleteIdentityLogo(target: "menu" | "qr") {
+    if (!businessId) return;
+    const confirmed = window.confirm(
+      target === "menu"
+        ? "¿Eliminar el logo de carta?"
+        : "¿Eliminar el logo de QR?",
+    );
+    if (!confirmed) return;
+    setIdentityMessage("");
+    try {
+      const updated = await request<Business>(
+        `/api/businesses/${businessId}/${target === "menu" ? "logo" : "qr-logo"}`,
+        token,
+        {
+          method: "DELETE",
+        },
+      );
+      setBusiness(updated);
+      setBusinesses((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setIdentityMessage(target === "menu" ? "Logo de carta eliminado." : "Logo de QR eliminado.");
+      await refresh({force: true});
+    } catch (deleteError: unknown) {
+      setIdentityMessage(uploadErrorMessage("logo", deleteError));
+      await refresh({force: true});
+    }
+  }
+
+  async function saveIdentity() {
+    if (!businessId) return;
+    setSavingIdentity(true);
+    setIdentityMessage("");
+    try {
+      const updated = await request<Business>(`/api/businesses/${businessId}`, token, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          name: businessNameDraft,
+          use_menu_logo_for_qr: useMenuLogoForQrDraft,
+        }),
       });
       setBusiness(updated);
       setBusinesses((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setSelectedLogo(null);
-      setLogoMessage("Logo guardado correctamente.");
+      setIdentityMessage("Identidad guardada correctamente.");
       await refresh({force: true});
-    } catch (uploadError: unknown) {
-      setLogoMessage(uploadErrorMessage("logo", uploadError));
+    } catch (saveError: unknown) {
+      setIdentityMessage(saveError instanceof Error ? saveError.message : "No pudimos guardar la identidad.");
       await refresh({force: true});
     } finally {
-      setUploadingLogo(false);
+      setSavingIdentity(false);
     }
   }
 
@@ -668,47 +745,16 @@ export function BusinessPanel({
                   ) : null}
                 </Card>
                 <Card className="panel-stack">
-                  <h2>Logo</h2>
-                  <label className="field">
-                    <span className="field__label">Logo</span>
-                    <input
-                      accept="image/png,image/jpeg"
-                      className="ui-input"
-                      disabled={!canMutate}
-                      onChange={(event) => setSelectedLogo(event.target.files?.[0] ?? null)}
-                      type="file"
-                    />
-                  </label>
-                  <p className="muted">{selectedLogo?.name ?? "Ningún logo seleccionado"}</p>
-                  {business.logo_url ? (
-                    <div className="asset-preview">
-                      <img
-                        alt={`Logo de ${business.name}`}
-                        className="logo-preview"
-                        src={assetUrl(
-                          `${business.logo_url}?t=${encodeURIComponent(
-                            business.updated_at ?? Date.now().toString(),
-                          )}`,
-                        )}
-                      />
-                    </div>
-                  ) : (
-                    <EmptyState
-                      description="Todavía no configuraste un logo para el negocio."
-                      title="Sin logo cargado"
-                    />
-                  )}
-                  <Button
-                    disabled={!canMutate || !selectedLogo || uploadingLogo}
-                    onClick={uploadLogo}
-                  >
-                    {uploadingLogo ? "Guardando..." : "Guardar logo"}
-                  </Button>
-                  {logoMessage ? (
-                    <Alert tone={logoMessage.includes("correctamente") ? "success" : "danger"}>
-                      {logoMessage}
-                    </Alert>
-                  ) : null}
+                  <h2>Identidad del negocio</h2>
+                  <p className="muted">
+                    El nombre comercial y los logos ahora viven en <strong>Configuración → Negocio → Identidad</strong>.
+                  </p>
+                  <div className="actions">
+                    <Button onClick={() => setView("settings")}>Ir a Configuración</Button>
+                    <Button onClick={() => setView("business")} variant="secondary">
+                      Abrir Identidad
+                    </Button>
+                  </div>
                 </Card>
               </div>
               <Card className="panel-stack">
@@ -808,8 +854,8 @@ export function BusinessPanel({
       {view === "business" ? (
         <section className="owner-view">
           <PageHeader
-            subtitle="Esta pantalla queda preparada mientras rediseñamos la edición completa del negocio."
-            title="Mi negocio"
+            subtitle="Configuración → Negocio → Identidad. Separada de la modalidad de carta."
+            title="Negocio"
           />
           <div className="content-grid">
             <Card className="panel-stack">
@@ -834,44 +880,116 @@ export function BusinessPanel({
               </div>
             </Card>
             <Card className="panel-stack">
-              <h2>Gestión de carta</h2>
-              <p className="muted">
-                La modalidad de carta y el editor ahora viven en <strong>Mi carta</strong>, para
-                que no haya controles duplicados.
-              </p>
-              <p className="muted">
-                Destino actual: {businessDestinationLabel(business.destination_type ?? "menu_pdf")}
-              </p>
+              <h2>Identidad</h2>
+              <label className="field">
+                <span className="field__label">Nombre comercial</span>
+                <input
+                  className="ui-input"
+                  disabled={!canMutate || savingIdentity}
+                  onChange={(event) => setBusinessNameDraft(event.target.value)}
+                  value={businessNameDraft}
+                />
+              </label>
+              <div className="identity-grid">
+                <div className="identity-card">
+                  <h3>Logo de carta</h3>
+                  <p className="muted">Se utiliza en la carta pública Nambre.</p>
+                  <label className="field">
+                    <span className="field__label">Archivo</span>
+                    <input
+                      accept="image/png,image/jpeg,image/webp"
+                      className="ui-input"
+                      disabled={!canMutate || uploadingMenuLogo}
+                      onChange={(event) => setSelectedMenuLogo(event.target.files?.[0] ?? null)}
+                      type="file"
+                    />
+                  </label>
+                  <p className="muted">{selectedMenuLogo?.name ?? "Ningún logo seleccionado"}</p>
+                  <p className="field__hint">
+                    PNG, JPG o WebP recomendado. Mejor con fondo transparente, formato horizontal o cuadrado y buena resolución.
+                  </p>
+                  <LogoPreview
+                    emptyDescription="Todavía no configuraste un logo para la carta."
+                    title={`Vista en carta de ${business.name}`}
+                    url={business.menu_logo_url ?? business.logo_url}
+                  />
+                  <div className="actions">
+                    <Button disabled={!canMutate || !selectedMenuLogo || uploadingMenuLogo} onClick={() => void uploadIdentityLogo("menu")}>
+                      {uploadingMenuLogo ? "Guardando..." : "Guardar logo de carta"}
+                    </Button>
+                    <Button disabled={!canMutate || !(business.menu_logo_url ?? business.logo_url)} onClick={() => void deleteIdentityLogo("menu")} variant="secondary">
+                      Eliminar
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="identity-card">
+                  <h3>Logo de QR</h3>
+                  <p className="muted">Se utiliza en el QR cuando corresponda.</p>
+                  <label className="login-legal__checkbox">
+                    <input
+                      checked={useMenuLogoForQrDraft}
+                      disabled={!canMutate || savingIdentity}
+                      onChange={(event) => setUseMenuLogoForQrDraft(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Usar el logo de carta también para el QR</span>
+                  </label>
+                  {!useMenuLogoForQrDraft ? (
+                    <>
+                      <label className="field">
+                        <span className="field__label">Archivo</span>
+                        <input
+                          accept="image/png,image/jpeg,image/webp"
+                          className="ui-input"
+                          disabled={!canMutate || uploadingQrLogo}
+                          onChange={(event) => setSelectedQrLogo(event.target.files?.[0] ?? null)}
+                          type="file"
+                        />
+                      </label>
+                      <p className="muted">{selectedQrLogo?.name ?? "Ningún logo seleccionado"}</p>
+                    </>
+                  ) : null}
+                  <p className="field__hint">
+                    Recomendado 1:1. Si el archivo es muy horizontal puede verse pequeño dentro del QR, pero no se va a deformar.
+                  </p>
+                  <LogoPreview
+                    emptyDescription="El QR usará el logo de carta hasta que cargues uno específico."
+                    title={`Vista en QR de ${business.name}`}
+                    url={useMenuLogoForQrDraft ? business.menu_logo_url ?? business.logo_url : business.qr_logo_url ?? business.menu_logo_url ?? business.logo_url}
+                  />
+                  {!useMenuLogoForQrDraft ? (
+                    <div className="actions">
+                      <Button disabled={!canMutate || !selectedQrLogo || uploadingQrLogo} onClick={() => void uploadIdentityLogo("qr")}>
+                        {uploadingQrLogo ? "Guardando..." : "Guardar logo de QR"}
+                      </Button>
+                      <Button disabled={!canMutate || !business.qr_logo_url} onClick={() => void deleteIdentityLogo("qr")} variant="secondary">
+                        Eliminar
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               <div className="actions">
-                <Button onClick={() => setView("menu")}>Ir a Mi carta</Button>
+                <Button disabled={!canMutate || savingIdentity || !businessNameDraft.trim()} onClick={() => void saveIdentity()}>
+                  {savingIdentity ? "Guardando..." : "Guardar identidad"}
+                </Button>
+                <Button onClick={() => setView("menu")} variant="secondary">
+                  Ir a Mi carta
+                </Button>
                 <Button
-                  disabled={
-                    (business.destination_type ?? "menu_pdf") !== "external_url" || !business.external_url
-                  }
+                  disabled={(business.destination_type ?? "menu_pdf") !== "external_url" || !business.external_url}
                   onClick={openCurrentExternalUrl}
                   variant="secondary"
                 >
                   Abrir/probar enlace actual
                 </Button>
               </div>
-              {business.logo_url ? (
-                <div className="asset-preview">
-                  <img
-                    alt={`Logo de ${business.name}`}
-                    className="logo-preview"
-                    src={assetUrl(
-                      `${business.logo_url}?t=${encodeURIComponent(
-                        business.updated_at ?? Date.now().toString(),
-                      )}`,
-                    )}
-                  />
-                </div>
-              ) : (
-                <EmptyState
-                  description="Podés cargarlo desde Mi carta mientras terminamos esta sección."
-                  title="Todavía no configuraste un logo"
-                />
-              )}
+              {identityMessage ? (
+                <Alert tone={identityMessage.includes("correctamente") || identityMessage.includes("eliminado") ? "success" : "danger"}>
+                  {identityMessage}
+                </Alert>
+              ) : null}
             </Card>
           </div>
         </section>
@@ -906,6 +1024,30 @@ function MetricCard({
       <strong>{value}</strong>
       {helper ? <small className="metric-card__helper">{helper}</small> : null}
     </Card>
+  );
+}
+
+function LogoPreview({
+  emptyDescription,
+  title,
+  url,
+}: {
+  emptyDescription: string;
+  title: string;
+  url: string | null | undefined;
+}) {
+  if (!url) {
+    return <EmptyState description={emptyDescription} title={title} />;
+  }
+
+  return (
+    <div className="asset-preview identity-preview">
+      <img
+        alt={title}
+        className="logo-preview"
+        src={assetUrl(`${url}?t=${encodeURIComponent(Date.now().toString())}`)}
+      />
+    </div>
   );
 }
 

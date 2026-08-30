@@ -124,6 +124,9 @@ class Business(Base):
     name: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    menu_logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    qr_logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    use_menu_logo_for_qr: Mapped[bool] = mapped_column(Boolean, default=True)
     plan_key: Mapped[BusinessPlanKey] = mapped_column(
         Enum(BusinessPlanKey), default=BusinessPlanKey.essential
     )
@@ -144,6 +147,16 @@ class Business(Base):
         from app.services.entitlements import get_business_feature_flags
 
         return get_business_feature_flags(self)
+
+    @property
+    def effective_menu_logo_url(self) -> str | None:
+        return self.menu_logo_url or self.logo_url
+
+    @property
+    def effective_qr_logo_url(self) -> str | None:
+        if self.use_menu_logo_for_qr:
+            return self.effective_menu_logo_url
+        return self.qr_logo_url or self.logo_url
 
 
 class User(Base):

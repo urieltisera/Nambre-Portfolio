@@ -17,6 +17,9 @@ class LocalStorage:
     def logo_key(self, business_id: str, suffix: str) -> str:
         return f"businesses/{business_id}/logo/logo{suffix}"
 
+    def qr_logo_key(self, business_id: str, suffix: str) -> str:
+        return f"businesses/{business_id}/qr-logo/logo{suffix}"
+
     def menu_item_image_key(self, business_id: str, item_id: str, suffix: str) -> str:
         return f"businesses/{business_id}/digital-menu/items/{item_id}/{uuid4()}{suffix}"
 

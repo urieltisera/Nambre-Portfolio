@@ -5,10 +5,15 @@ import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/reac
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {ApiError} from "../lib/api";
 import Page from "../app/page";
+import LoginPage from "../app/login/page";
+import DashboardPage from "../app/dashboard/page";
 
 const mocks = vi.hoisted(() => ({
   currentUser: vi.fn(),
   logout: vi.fn(async () => undefined),
+  router: {
+    replace: vi.fn(),
+  },
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -39,33 +44,48 @@ vi.mock("@/components/AdminPanel", () => ({
   AdminPanel: () => <div>Admin panel</div>,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => mocks.router,
+}));
+
 afterEach(() => {
   cleanup();
   mocks.currentUser.mockReset();
   mocks.logout.mockReset();
+  mocks.router.replace.mockReset();
 });
 
 describe("Page", () => {
-  it("restores a valid cookie session without flashing the login", async () => {
+  it("renders a public root without bootstrapping the authenticated shell", () => {
+    render(<Page />);
+
+    expect(screen.getByRole("heading", {name: "Nambre"})).toBeTruthy();
+    expect(screen.getByRole("link", {name: "Ingresar"}).getAttribute("href")).toBe("/login");
+    expect(mocks.currentUser).not.toHaveBeenCalled();
+    expect(screen.queryByText("Business panel")).toBeNull();
+  });
+});
+
+describe("LoginPage", () => {
+  it("redirects an already authenticated session to the dashboard", async () => {
     mocks.currentUser.mockResolvedValueOnce({
       email: "owner@example.com",
       id: "owner-1",
       is_platform_admin: false,
     });
 
-    render(<Page />);
+    render(<LoginPage />);
     await waitFor(() => {
       expect(mocks.currentUser).toHaveBeenCalledWith();
     });
-    expect(screen.getByText("Business panel")).toBeTruthy();
+    expect(mocks.router.replace).toHaveBeenCalledWith("/dashboard");
     expect(screen.queryByRole("button", {name: "Mock login"})).toBeNull();
-    expect(screen.queryByRole("button", {name: "Admin"})).toBeNull();
   });
 
   it("shows login after a bootstrap 401", async () => {
     mocks.currentUser.mockRejectedValueOnce(new ApiError(401, "Not authenticated"));
 
-    render(<Page />);
+    render(<LoginPage />);
 
     await waitFor(() => {
       expect(mocks.currentUser).toHaveBeenCalledWith();
@@ -83,17 +103,49 @@ describe("Page", () => {
       is_platform_admin: false,
     });
 
-    render(<Page />);
+    render(<LoginPage />);
 
     await screen.findByRole("button", {name: "Mock login"});
     fireEvent.click(screen.getByRole("button", {name: "Mock login"}));
 
-    await screen.findByText("Business panel");
+    await waitFor(() => {
+      expect(mocks.router.replace).toHaveBeenCalledWith("/dashboard");
+    });
     expect(mocks.currentUser).toHaveBeenNthCalledWith(2, "owner-token");
     expect(localSetItem).not.toHaveBeenCalledWith(
       expect.stringMatching(/token|bearer|session/i),
       expect.any(String),
     );
+  });
+});
+
+describe("DashboardPage", () => {
+  it("restores a valid cookie session without flashing the login", async () => {
+    mocks.currentUser.mockResolvedValueOnce({
+      email: "owner@example.com",
+      id: "owner-1",
+      is_platform_admin: false,
+    });
+
+    render(<DashboardPage />);
+    await waitFor(() => {
+      expect(mocks.currentUser).toHaveBeenCalledWith();
+    });
+    expect(screen.getByText("Business panel")).toBeTruthy();
+    expect(screen.queryByRole("button", {name: "Mock login"})).toBeNull();
+    expect(screen.queryByRole("button", {name: "Admin"})).toBeNull();
+  });
+
+  it("redirects unauthenticated users to login", async () => {
+    mocks.currentUser.mockRejectedValueOnce(new ApiError(401, "Not authenticated"));
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mocks.currentUser).toHaveBeenCalledWith();
+    });
+    expect(mocks.router.replace).toHaveBeenCalledWith("/login");
+    expect(screen.queryByText("Business panel")).toBeNull();
   });
 
   it("calls logout and returns to login after closing a cookie-restored session", async () => {
@@ -103,7 +155,7 @@ describe("Page", () => {
       is_platform_admin: false,
     });
 
-    render(<Page />);
+    render(<DashboardPage />);
     await screen.findByText("Business panel");
     fireEvent.click(screen.getByRole("button", {name: "Mock logout"}));
 
@@ -111,8 +163,7 @@ describe("Page", () => {
       expect(mocks.logout).toHaveBeenCalledWith(null);
     });
     await waitFor(() => {
-      expect(screen.getByRole("button", {name: "Mock login"})).toBeTruthy();
+      expect(mocks.router.replace).toHaveBeenCalledWith("/login");
     });
-    expect(screen.queryByText("Business panel")).toBeNull();
   });
 });

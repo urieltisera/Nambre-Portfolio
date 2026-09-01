@@ -58,7 +58,7 @@ export function ForgotPasswordForm() {
           <Button disabled={loading || !email.trim()} type="submit">
             <Mail size={18} /> {loading ? "Enviando..." : "Enviar instrucciones"}
           </Button>
-          <Link className="ui-button ui-button--ghost ui-button--sm login-card__request-access" href="/">
+          <Link className="ui-button ui-button--ghost ui-button--sm login-card__request-access" href="/login">
             Volver al login
           </Link>
         </form>

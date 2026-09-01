@@ -32,7 +32,7 @@ export function ActivateAccountForm({initialToken}: {initialToken: string}) {
   useEffect(() => {
     if (!message) return;
     const timeoutId = window.setTimeout(() => {
-      router.replace("/");
+      router.replace("/login");
     }, 1500);
     return () => {
       window.clearTimeout(timeoutId);
@@ -155,7 +155,7 @@ export function ActivateAccountForm({initialToken}: {initialToken: string}) {
           >
             <KeyRound size={18} /> {loading ? "Activando..." : "Crear contraseña"}
           </Button>
-          <Link className="ui-button ui-button--ghost ui-button--sm login-card__request-access" href="/">
+          <Link className="ui-button ui-button--ghost ui-button--sm login-card__request-access" href="/login">
             Volver al login
           </Link>
         </form>

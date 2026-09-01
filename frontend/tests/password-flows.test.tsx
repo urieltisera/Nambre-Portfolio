@@ -132,14 +132,14 @@ describe("Password flows", () => {
 
     expect(mocks.confirmPasswordReset).toHaveBeenCalledWith("reset-token", "new-pass-123");
     expect(screen.getByText("La contraseña fue actualizada.")).toBeTruthy();
-    expect(screen.getByRole("link", {name: "Volver al login"}).getAttribute("href")).toBe("/");
+    expect(screen.getByRole("link", {name: "Volver al login"}).getAttribute("href")).toBe("/login");
     expect(mocks.replace).not.toHaveBeenCalled();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
 
-    expect(mocks.replace).toHaveBeenCalledWith("/");
+    expect(mocks.replace).toHaveBeenCalledWith("/login");
     expect(mocks.confirmPasswordReset).toHaveBeenCalledTimes(1);
     expect(localSetItem).not.toHaveBeenCalledWith(
       expect.stringMatching(/reset|token|password/i),
@@ -187,7 +187,7 @@ describe("Password flows", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
-    expect(mocks.replace).toHaveBeenCalledWith("/");
+    expect(mocks.replace).toHaveBeenCalledWith("/login");
   });
 
   it("shows clear activation errors for missing token and missing legal acceptance", async () => {

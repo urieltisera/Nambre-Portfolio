@@ -1,0 +1,102 @@
+/*
+ * Nambre Design Language tokens.
+ *
+ * This layer is additive by design: existing product styles keep consuming the
+ * legacy tokens from app/globals.css, while future Marketing/Auth/Product work
+ * can opt into the --nl-* namespace without changing current rendering.
+ */
+
+:root {
+  /* Brand asset kit values currently represented in public/brand/*.svg. */
+  --nl-color-brand-isotype: #0B4A47;
+  --nl-color-brand-inverse: #FFFFFF;
+
+  /* Customer-facing public menu defaults represented in components/public-menu/theme.ts. */
+  --nl-color-customer-public-menu-accent: #955F32;
+  --nl-color-customer-public-menu-background: #F6F0E8;
+  --nl-color-customer-public-menu-surface: #FFF7EE;
+  --nl-color-customer-public-menu-text: #241711;
+  --nl-color-customer-public-menu-muted: #6F6258;
+
+  /* Product color aliases. Legacy tokens remain the source of truth. */
+  --nl-color-product-primary: var(--primary);
+  --nl-color-product-primary-hover: var(--primary-hover);
+  --nl-color-product-primary-soft: var(--primary-soft);
+  --nl-color-product-focus: var(--focus);
+
+  /* Base semantic aliases. Legacy tokens remain the source of truth. */
+  --nl-color-background: var(--background);
+  --nl-color-surface: var(--surface);
+  --nl-color-surface-secondary: var(--surface-secondary);
+  --nl-color-text-primary: var(--text-primary);
+  --nl-color-text-secondary: var(--text-secondary);
+  --nl-color-border: var(--border);
+  --nl-color-overlay: var(--overlay);
+  --nl-color-success: var(--success);
+  --nl-color-warning: var(--warning);
+  --nl-color-danger: var(--danger);
+
+  /* Typography aliases and approved brand-facing fallbacks. */
+  --nl-font-sans: var(--font-sans);
+  --nl-font-brand-display: "Montserrat", var(--nl-font-sans);
+  --nl-font-menu-heading-editorial: var(--font-menu-heading-editorial), Georgia, serif;
+  --nl-font-menu-heading-modern: var(--font-menu-heading-modern), Georgia, serif;
+  --nl-font-menu-heading-classic: var(--font-menu-heading-classic), Georgia, serif;
+  --nl-font-menu-heading-rounded: var(--font-menu-heading-rounded), "Segoe UI", sans-serif;
+  --nl-font-menu-body-clean: var(--font-menu-body-clean), "Segoe UI", sans-serif;
+  --nl-font-menu-body-humanist: var(--font-menu-body-humanist), "Segoe UI", sans-serif;
+  --nl-font-menu-body-modern: var(--font-menu-body-modern), "Segoe UI", sans-serif;
+
+  /* Minimal type scale for upcoming marketing/auth composition. */
+  --nl-type-size-xs: 0.75rem;
+  --nl-type-size-sm: 0.875rem;
+  --nl-type-size-md: 1rem;
+  --nl-type-size-lg: 1.125rem;
+  --nl-type-size-xl: 1.375rem;
+  --nl-type-size-2xl: 1.75rem;
+  --nl-type-size-3xl: clamp(2rem, 4vw, 3.5rem);
+  --nl-type-line-tight: 1.1;
+  --nl-type-line-snug: 1.25;
+  --nl-type-line-normal: 1.5;
+  --nl-type-weight-regular: 400;
+  --nl-type-weight-medium: 500;
+  --nl-type-weight-semibold: 600;
+  --nl-type-weight-bold: 700;
+  --nl-type-weight-extrabold: 800;
+
+  /* Spacing scale. */
+  --nl-space-0: 0;
+  --nl-space-1: 0.25rem;
+  --nl-space-2: 0.5rem;
+  --nl-space-3: 0.75rem;
+  --nl-space-4: 1rem;
+  --nl-space-5: 1.25rem;
+  --nl-space-6: 1.5rem;
+  --nl-space-8: 2rem;
+  --nl-space-10: 2.5rem;
+  --nl-space-12: 3rem;
+  --nl-space-16: 4rem;
+
+  /* Radius and elevation aliases. Legacy visual modes remain the source of truth. */
+  --nl-radius-sm: var(--radius-sm);
+  --nl-radius-md: var(--radius-md);
+  --nl-radius-lg: var(--radius-lg);
+  --nl-radius-menu-square: 8px;
+  --nl-radius-menu-soft: 16px;
+  --nl-radius-menu-rounded: 26px;
+  --nl-shadow-sm: var(--shadow-sm);
+  --nl-shadow-md: var(--shadow-md);
+  --nl-shadow-tooltip: var(--tooltip-shadow);
+
+  /* Motion primitives for future opt-in use. */
+  --nl-motion-duration-fast: 120ms;
+  --nl-motion-duration-base: 180ms;
+  --nl-motion-duration-slow: 260ms;
+  --nl-motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --nl-motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout aliases. Current product layout remains source of truth. */
+  --nl-container-product: var(--page-max-width);
+  --nl-container-readable: 720px;
+  --nl-container-marketing: 1180px;
+}

@@ -56,13 +56,31 @@ afterEach(() => {
 });
 
 describe("Page", () => {
-  it("renders a public root without bootstrapping the authenticated shell", () => {
+  it("renders the marketing landing without bootstrapping the authenticated shell", () => {
     render(<Page />);
 
-    expect(screen.getByRole("heading", {name: "Nambre"})).toBeTruthy();
-    expect(screen.getByRole("link", {name: "Ingresar"}).getAttribute("href")).toBe("/login");
+    expect(
+      screen.getByRole("heading", {
+        name: "Nambre convierte tu carta en una experiencia digital lista para cambiar todos los días.",
+      }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("link", {name: "Ingresar"}).some((link) => link.getAttribute("href") === "/login")).toBe(
+      true,
+    );
+    expect(screen.getByRole("navigation", {name: "Secciones de la landing"})).toBeTruthy();
+    expect(screen.getByRole("img", {name: "Vista previa conceptual de una carta digital"})).toBeTruthy();
     expect(mocks.currentUser).not.toHaveBeenCalled();
     expect(screen.queryByText("Business panel")).toBeNull();
+  });
+
+  it("renders marketing CTAs, FAQ structure and legal footer links", () => {
+    render(<Page />);
+
+    expect(screen.getByRole("link", {name: "Empezar con Nambre"}).getAttribute("href")).toBe("/login");
+    expect(screen.getByRole("link", {name: "Ir a Nambre"}).getAttribute("href")).toBe("/login");
+    expect(screen.getByText("¿Necesito cambiar el QR cuando edito la carta?").tagName).toBe("SUMMARY");
+    expect(screen.getByRole("link", {name: "Privacidad"}).getAttribute("href")).toBe("/privacy");
+    expect(screen.getByRole("link", {name: "Términos"}).getAttribute("href")).toBe("/terms");
   });
 });
 

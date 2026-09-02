@@ -1,0 +1,387 @@
+.marketing-shell {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--nl-color-background) 92%, #d9ece9) 0%, transparent 38%),
+    linear-gradient(180deg, #f7fbfa 0%, var(--nl-color-background) 42%, #ffffff 100%);
+  color: var(--nl-color-text-primary);
+  min-height: 100vh;
+}
+
+.marketing-nav {
+  background: color-mix(in srgb, var(--nl-color-surface) 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--nl-color-border) 72%, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.marketing-nav__inner {
+  align-items: center;
+  display: flex;
+  gap: var(--nl-space-4);
+  min-height: 4.5rem;
+}
+
+.marketing-nav__brand,
+.marketing-footer__brand {
+  align-items: center;
+  color: var(--nl-color-text-primary);
+  display: inline-flex;
+  font-family: var(--nl-font-brand-display);
+  font-weight: var(--nl-type-weight-extrabold);
+  gap: var(--nl-space-2);
+  text-decoration: none;
+}
+
+.marketing-nav__links,
+.marketing-footer__links {
+  display: none;
+}
+
+.marketing-nav__login {
+  color: var(--nl-color-product-primary);
+  font-weight: var(--nl-type-weight-bold);
+  margin-left: auto;
+  text-decoration: none;
+}
+
+.marketing-hero {
+  overflow: hidden;
+  position: relative;
+}
+
+.marketing-hero::before {
+  background:
+    linear-gradient(120deg, rgba(8, 127, 123, 0.18), transparent 40%),
+    linear-gradient(60deg, transparent 22%, rgba(11, 74, 71, 0.14), transparent 68%);
+  content: "";
+  inset: 0;
+  opacity: 0.85;
+  pointer-events: none;
+  position: absolute;
+}
+
+.marketing-hero__inner {
+  display: grid;
+  gap: var(--nl-space-8);
+  padding-block: var(--nl-space-12);
+  position: relative;
+}
+
+.marketing-hero__copy,
+.marketing-section__header,
+.marketing-product-panel__content,
+.marketing-final-cta__inner {
+  display: grid;
+  gap: var(--nl-space-4);
+}
+
+.marketing-hero__copy {
+  max-width: 760px;
+}
+
+.marketing-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nl-space-3);
+}
+
+.marketing-hero__visual {
+  min-height: 25rem;
+  position: relative;
+}
+
+.marketing-orbit {
+  background:
+    linear-gradient(145deg, rgba(8, 127, 123, 0.2), rgba(255, 255, 255, 0.3)),
+    repeating-linear-gradient(110deg, transparent 0 1.25rem, rgba(11, 74, 71, 0.1) 1.25rem 1.32rem);
+  border: 1px solid rgba(11, 74, 71, 0.16);
+  border-radius: 2rem;
+  inset: 1.5rem 0 0 1.5rem;
+  position: absolute;
+  transform: rotate(-3deg);
+}
+
+.marketing-device {
+  background: color-mix(in srgb, var(--nl-color-surface) 94%, transparent);
+  border: 1px solid var(--nl-color-border);
+  border-radius: var(--nl-radius-lg);
+  box-shadow: var(--nl-shadow-md);
+  display: grid;
+  gap: var(--nl-space-4);
+  margin-left: auto;
+  max-width: 26rem;
+  padding: var(--nl-space-5);
+  position: relative;
+}
+
+.marketing-device__topline,
+.marketing-device__footer {
+  color: var(--nl-color-text-secondary);
+  display: flex;
+  font-size: var(--nl-type-size-xs);
+  font-weight: var(--nl-type-weight-bold);
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketing-device__title {
+  font-family: var(--nl-font-brand-display);
+  font-size: var(--nl-type-size-2xl);
+  font-weight: var(--nl-type-weight-extrabold);
+}
+
+.marketing-device__category {
+  color: var(--nl-color-product-primary);
+  font-weight: var(--nl-type-weight-bold);
+}
+
+.marketing-menu-card,
+.marketing-card,
+.marketing-faq__item,
+.marketing-pricing,
+.marketing-product-panel {
+  background: color-mix(in srgb, var(--nl-color-surface) 96%, transparent);
+  border: 1px solid var(--nl-color-border);
+  border-radius: var(--nl-radius-md);
+}
+
+.marketing-menu-card {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--nl-space-4);
+}
+
+.marketing-section {
+  padding-block: var(--nl-space-12);
+}
+
+.marketing-section--muted {
+  background: color-mix(in srgb, var(--nl-color-surface-secondary) 68%, transparent);
+}
+
+.marketing-section__header {
+  max-width: 720px;
+}
+
+.marketing-card-grid {
+  display: grid;
+  gap: var(--nl-space-4);
+  margin-top: var(--nl-space-8);
+}
+
+.marketing-card {
+  display: grid;
+  gap: var(--nl-space-3);
+  padding: var(--nl-space-5);
+}
+
+.marketing-split,
+.marketing-showcase,
+.marketing-pricing {
+  display: grid;
+  gap: var(--nl-space-8);
+}
+
+.marketing-steps {
+  counter-reset: marketing-step;
+  display: grid;
+  gap: var(--nl-space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.marketing-steps li,
+.marketing-capabilities li,
+.marketing-product-list span {
+  background: var(--nl-color-surface);
+  border: 1px solid var(--nl-color-border);
+  border-radius: var(--nl-radius-sm);
+  color: var(--nl-color-text-primary);
+}
+
+.marketing-steps li {
+  align-items: center;
+  display: grid;
+  gap: var(--nl-space-3);
+  grid-template-columns: auto 1fr;
+  padding: var(--nl-space-4);
+}
+
+.marketing-steps span {
+  color: var(--nl-color-product-primary);
+  font-family: var(--nl-font-brand-display);
+  font-weight: var(--nl-type-weight-extrabold);
+}
+
+.marketing-product-panel {
+  box-shadow: var(--nl-shadow-sm);
+  overflow: hidden;
+}
+
+.marketing-product-panel__bar {
+  background: var(--nl-color-surface-secondary);
+  border-bottom: 1px solid var(--nl-color-border);
+  display: flex;
+  gap: var(--nl-space-2);
+  padding: var(--nl-space-3) var(--nl-space-4);
+}
+
+.marketing-product-panel__bar span {
+  background: var(--nl-color-border);
+  border-radius: 999px;
+  height: 0.65rem;
+  width: 0.65rem;
+}
+
+.marketing-product-panel__content {
+  padding: var(--nl-space-5);
+}
+
+.marketing-product-list {
+  display: grid;
+  gap: var(--nl-space-3);
+}
+
+.marketing-product-list span {
+  padding: var(--nl-space-3);
+}
+
+.marketing-product-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nl-space-3);
+}
+
+.marketing-capabilities {
+  display: grid;
+  gap: var(--nl-space-3);
+  list-style: none;
+  margin: var(--nl-space-8) 0 0;
+  padding: 0;
+}
+
+.marketing-capabilities li {
+  font-weight: var(--nl-type-weight-semibold);
+  padding: var(--nl-space-4);
+}
+
+.marketing-pricing {
+  align-items: start;
+  padding: var(--nl-space-6);
+}
+
+.marketing-faq {
+  display: grid;
+  gap: var(--nl-space-8);
+}
+
+.marketing-faq__items {
+  display: grid;
+  gap: var(--nl-space-3);
+}
+
+.marketing-faq__item {
+  padding: var(--nl-space-4);
+}
+
+.marketing-faq__item summary {
+  color: var(--nl-color-text-primary);
+  cursor: pointer;
+  font-weight: var(--nl-type-weight-bold);
+}
+
+.marketing-faq__item summary:focus-visible {
+  border-radius: var(--nl-radius-sm);
+  outline: 3px solid var(--nl-color-product-focus);
+  outline-offset: 0.25rem;
+}
+
+.marketing-faq__item .nl-text {
+  margin-top: var(--nl-space-3);
+}
+
+.marketing-final-cta {
+  background: var(--nl-color-text-primary);
+  color: var(--nl-color-brand-inverse);
+  padding-block: var(--nl-space-12);
+}
+
+.marketing-final-cta .nl-heading,
+.marketing-final-cta .nl-text {
+  color: inherit;
+}
+
+.marketing-final-cta__inner {
+  justify-items: start;
+  max-width: 760px;
+}
+
+.marketing-footer {
+  background: var(--nl-color-text-primary);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--nl-color-brand-inverse);
+  padding-block: var(--nl-space-6);
+}
+
+.marketing-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nl-space-4);
+  justify-content: space-between;
+}
+
+.marketing-footer__brand,
+.marketing-footer__links a {
+  color: inherit;
+}
+
+@media (min-width: 48rem) {
+  .marketing-nav__links {
+    display: flex;
+    gap: var(--nl-space-4);
+    margin-left: auto;
+  }
+
+  .marketing-nav__links a,
+  .marketing-footer__links a {
+    color: var(--nl-color-text-secondary);
+    font-size: var(--nl-type-size-sm);
+    font-weight: var(--nl-type-weight-semibold);
+    text-decoration: none;
+  }
+
+  .marketing-nav__login {
+    margin-left: 0;
+  }
+
+  .marketing-hero__inner,
+  .marketing-showcase {
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.75fr);
+  }
+
+  .marketing-card-grid,
+  .marketing-capabilities {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .marketing-split,
+  .marketing-pricing {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  }
+
+  .marketing-footer__links {
+    display: flex;
+    gap: var(--nl-space-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-nav,
+  .marketing-hero::before {
+    scroll-behavior: auto;
+  }
+}

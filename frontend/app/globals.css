@@ -1,5 +1,6 @@
 @import "../design-language/tokens.css";
 @import "../design-language/components/styles.css";
+@import "../components/marketing/marketing.css";
 
 :root {
   color-scheme: light;

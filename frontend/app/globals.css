@@ -1,4 +1,5 @@
 @import "../design-language/tokens.css";
+@import "../design-language/components/styles.css";
 
 :root {
   color-scheme: light;

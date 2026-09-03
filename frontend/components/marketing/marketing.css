@@ -1,14 +1,45 @@
 .marketing-shell {
+  --marketing-background: #f4f7f6;
+  --marketing-surface: #ffffff;
+  --marketing-surface-secondary: #eef5f4;
+  --marketing-text-primary: #132321;
+  --marketing-text-secondary: #58706b;
+  --marketing-border: #d6e0dd;
+  --marketing-primary: #087f7b;
+  --marketing-primary-hover: #066a67;
+  --marketing-primary-soft: rgba(8, 127, 123, 0.12);
+  --marketing-focus: rgba(8, 127, 123, 0.28);
+  --background: #f4f7f6;
+  --surface: #ffffff;
+  --surface-secondary: #eef5f4;
+  --text-primary: #132321;
+  --text-secondary: #58706b;
+  --border: #d6e0dd;
+  --primary: #087f7b;
+  --primary-hover: #066a67;
+  --primary-soft: rgba(8, 127, 123, 0.12);
+  --focus: rgba(8, 127, 123, 0.28);
+  --nl-color-background: var(--marketing-background);
+  --nl-color-surface: var(--marketing-surface);
+  --nl-color-surface-secondary: var(--marketing-surface-secondary);
+  --nl-color-text-primary: var(--marketing-text-primary);
+  --nl-color-text-secondary: var(--marketing-text-secondary);
+  --nl-color-border: var(--marketing-border);
+  --nl-color-product-primary: var(--marketing-primary);
+  --nl-color-product-primary-hover: var(--marketing-primary-hover);
+  --nl-color-product-primary-soft: var(--marketing-primary-soft);
+  --nl-color-product-focus: var(--marketing-focus);
+  color-scheme: light;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--nl-color-background) 92%, #d9ece9) 0%, transparent 38%),
-    linear-gradient(180deg, #f7fbfa 0%, var(--nl-color-background) 42%, #ffffff 100%);
-  color: var(--nl-color-text-primary);
+    linear-gradient(135deg, color-mix(in srgb, var(--marketing-background) 92%, #d9ece9) 0%, transparent 38%),
+    linear-gradient(180deg, #f7fbfa 0%, var(--marketing-background) 42%, #ffffff 100%);
+  color: var(--marketing-text-primary);
   min-height: 100vh;
 }
 
 .marketing-nav {
-  background: color-mix(in srgb, var(--nl-color-surface) 88%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--nl-color-border) 72%, transparent);
+  background: color-mix(in srgb, var(--marketing-surface) 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--marketing-border) 72%, transparent);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -49,6 +80,36 @@
   position: relative;
 }
 
+.marketing-hero__enhancement {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.marketing-hero__fallback-layer,
+.marketing-gradient-waves-host,
+.marketing-gradient-waves {
+  height: 100%;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.marketing-hero__fallback-layer {
+  background:
+    radial-gradient(circle at 18% 24%, rgba(238, 247, 242, 0.96), transparent 34%),
+    radial-gradient(circle at 78% 18%, rgba(21, 150, 142, 0.3), transparent 32%),
+    linear-gradient(135deg, rgba(3, 42, 38, 0.92), rgba(9, 87, 81, 0.62) 46%, rgba(255, 252, 241, 0.74));
+  opacity: 0.44;
+}
+
+.marketing-gradient-waves {
+  display: block;
+  opacity: 0.72;
+}
+
 .marketing-hero::before {
   background:
     linear-gradient(120deg, rgba(8, 127, 123, 0.18), transparent 40%),
@@ -65,6 +126,7 @@
   gap: var(--nl-space-8);
   padding-block: var(--nl-space-12);
   position: relative;
+  z-index: 1;
 }
 
 .marketing-hero__copy,
@@ -86,19 +148,21 @@
 }
 
 .marketing-hero__visual {
+  display: grid;
   min-height: 25rem;
+  padding: var(--nl-space-4);
+  place-items: center;
   position: relative;
 }
 
 .marketing-orbit {
   background:
-    linear-gradient(145deg, rgba(8, 127, 123, 0.2), rgba(255, 255, 255, 0.3)),
-    repeating-linear-gradient(110deg, transparent 0 1.25rem, rgba(11, 74, 71, 0.1) 1.25rem 1.32rem);
+    linear-gradient(145deg, rgba(8, 127, 123, 0.2), rgba(255, 255, 255, 0.3));
   border: 1px solid rgba(11, 74, 71, 0.16);
   border-radius: 2rem;
-  inset: 1.5rem 0 0 1.5rem;
+  inset: 2.25rem 1rem 1.25rem;
   position: absolute;
-  transform: rotate(-3deg);
+  transform: rotate(-2deg);
 }
 
 .marketing-device {
@@ -108,14 +172,14 @@
   box-shadow: var(--nl-shadow-md);
   display: grid;
   gap: var(--nl-space-4);
-  margin-left: auto;
+  margin-inline: auto;
   max-width: 26rem;
   padding: var(--nl-space-5);
   position: relative;
+  width: min(100%, 26rem);
 }
 
-.marketing-device__topline,
-.marketing-device__footer {
+.marketing-device__topline {
   color: var(--nl-color-text-secondary);
   display: flex;
   font-size: var(--nl-type-size-xs);
@@ -304,7 +368,7 @@
 }
 
 .marketing-final-cta {
-  background: var(--nl-color-text-primary);
+  background: var(--marketing-text-primary);
   color: var(--nl-color-brand-inverse);
   padding-block: var(--nl-space-12);
 }
@@ -320,7 +384,7 @@
 }
 
 .marketing-footer {
-  background: var(--nl-color-text-primary);
+  background: var(--marketing-text-primary);
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--nl-color-brand-inverse);
   padding-block: var(--nl-space-6);
@@ -347,10 +411,17 @@
 
   .marketing-nav__links a,
   .marketing-footer__links a {
-    color: var(--nl-color-text-secondary);
     font-size: var(--nl-type-size-sm);
     font-weight: var(--nl-type-weight-semibold);
     text-decoration: none;
+  }
+
+  .marketing-nav__links a {
+    color: var(--nl-color-text-secondary);
+  }
+
+  .marketing-footer__links a {
+    color: inherit;
   }
 
   .marketing-nav__login {
@@ -383,5 +454,9 @@
   .marketing-nav,
   .marketing-hero::before {
     scroll-behavior: auto;
+  }
+
+  .marketing-gradient-waves-host {
+    display: none;
   }
 }

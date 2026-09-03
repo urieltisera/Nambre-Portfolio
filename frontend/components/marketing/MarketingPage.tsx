@@ -1,12 +1,13 @@
 import Link from "next/link";
 import React from "react";
 import {Button, Container, Display, Eyebrow, Heading, NambreLogo, Text} from "@/design-language/components";
+import {HeroBackgroundClient} from "./hero/HeroBackgroundClient";
 
 const navItems = [
   {href: "#valor", label: "Valor"},
   {href: "#como-funciona", label: "Cómo funciona"},
   {href: "#producto", label: "Producto"},
-  {href: "#precio", label: "Precio"},
+  {href: "#contacto", label: "Contacto"},
   {href: "#faq", label: "FAQ"},
 ];
 
@@ -52,9 +53,8 @@ const faqs = [
       "No. La idea es conservar un acceso permanente y modificar el contenido desde el panel cuando haga falta.",
   },
   {
-    question: "¿La landing usa datos reales de clientes?",
-    answer:
-      "No. Esta primera versión muestra una base visual del producto sin capturas reales, métricas inventadas ni información sensible.",
+    question: "¿Qué necesito para empezar con Nambre?",
+    answer: "Un negocio gastronómico, una carta para cargar y un canal de contacto para coordinar el alta comercial.",
   },
 ];
 
@@ -83,7 +83,7 @@ function MarketingNav() {
           <NambreLogo size="sm" variant="currentColor" />
           <span>Nambre</span>
         </Link>
-        <nav aria-label="Secciones de la landing" className="marketing-nav__links">
+        <nav aria-label="Secciones de Nambre" className="marketing-nav__links">
           {navItems.map((item) => (
             <Link href={item.href} key={item.href}>
               {item.label}
@@ -101,6 +101,7 @@ function MarketingNav() {
 function MarketingHero() {
   return (
     <section className="marketing-hero">
+      <HeroBackgroundClient />
       <Container className="marketing-hero__inner">
         <div className="marketing-hero__copy">
           <Eyebrow>Menú digital y QR profesional</Eyebrow>
@@ -110,7 +111,7 @@ function MarketingHero() {
             actualizada.
           </Text>
           <div className="marketing-hero__actions" aria-label="Acciones principales">
-            <Link className="nl-button nl-button--primary nl-button--lg" href="/login">
+            <Link className="nl-button nl-button--primary nl-button--lg" href="#contacto">
               Empezar con Nambre
             </Link>
             <Link className="nl-button nl-button--ghost nl-button--lg" href="/login">
@@ -135,7 +136,6 @@ function MarketingHero() {
               <span>Limonada fresca</span>
               <strong>$ 3.400</strong>
             </div>
-            <div className="marketing-device__footer">Mock visual interno</div>
           </div>
         </div>
       </Container>
@@ -171,9 +171,7 @@ function HowItWorks() {
         <div className="marketing-section__header">
           <Eyebrow>Cómo funciona</Eyebrow>
           <Heading>Una base simple para operar tu carta digital.</Heading>
-          <Text>
-            D2 deja la landing lista para explicar el producto sin depender de animaciones pesadas ni datos de clientes.
-          </Text>
+          <Text>Publicá tu carta, compartí un QR estable y mantené la información al día con una operación simple.</Text>
         </div>
         <ol className="marketing-steps">
           {steps.map((step, index) => (
@@ -219,11 +217,10 @@ function ProductShowcase() {
           </div>
         </div>
         <div className="marketing-section__header">
-          <Eyebrow>Showcase base</Eyebrow>
-          <Heading>Una muestra conceptual, no una captura de cliente.</Heading>
+          <Eyebrow>Producto</Eyebrow>
+          <Heading>Una vista clara para presentar tu carta con identidad profesional.</Heading>
           <Text>
-            La landing presenta la forma del producto con un mock interno y suficiente contexto para entender qué hace
-            Nambre.
+            Nambre reúne el menú, el QR y la edición diaria en una experiencia simple para tu equipo y tus clientes.
           </Text>
         </div>
       </Container>
@@ -251,15 +248,14 @@ function Differentiators() {
 
 function PricingTeaser() {
   return (
-    <section className="marketing-section" id="precio">
+    <section className="marketing-section" id="contacto">
       <Container className="marketing-pricing">
         <div>
-          <Eyebrow>Modelo de entrada</Eyebrow>
-          <Heading>Empezá con una carta digital profesional y sumá flexibilidad a medida que operás.</Heading>
+          <Eyebrow>Contacto comercial</Eyebrow>
+          <Heading>Empezá con una carta digital profesional y un alta acompañada por el equipo de Nambre.</Heading>
         </div>
         <Text>
-          Nambre está pensado para negocios gastronómicos que necesitan publicar, mantener y compartir su menú con menos
-          pasos.
+          Coordinamos los próximos pasos para preparar tu QR, cargar la carta y dejar el panel listo para operar.
         </Text>
       </Container>
     </section>
@@ -310,7 +306,10 @@ function MarketingFooter() {
           <NambreLogo size="sm" variant="currentColor" />
           <span>Nambre</span>
         </Link>
-        <nav aria-label="Enlaces legales" className="marketing-footer__links">
+        <nav aria-label="Enlaces de Nambre" className="marketing-footer__links">
+          <Link href="#contacto">Contacto</Link>
+          <Link href="#contacto">Instagram</Link>
+          <Link href="#contacto">Teléfono</Link>
           <Link href="/privacy">Privacidad</Link>
           <Link href="/terms">Términos</Link>
           <Link href="/acceptable-use">Uso aceptable</Link>

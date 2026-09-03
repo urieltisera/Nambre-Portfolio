@@ -14,6 +14,12 @@ import {
   Store,
 } from "lucide-react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {
+  dashboardDestinationLabel,
+  DashboardHeader,
+} from "@/components/dashboard/DashboardHeader";
+import {DashboardActions} from "@/components/dashboard/DashboardActions";
+import {DashboardMetricsGrid} from "@/components/dashboard/DashboardMetricsGrid";
 import {DigitalMenuEditor} from "@/components/digital-menu/DigitalMenuEditor";
 import {MenuDestinationSelector} from "@/components/digital-menu/MenuDestinationSelector";
 import {ActivityChart} from "@/components/owner/ActivityChart";
@@ -422,12 +428,10 @@ export function BusinessPanel({
   }
 
   const qrGroups = useMemo(() => groupQrAssets(qr), [qr]);
-  const recentActivity = useMemo(() => sliceDailySeries(series, 7), [series]);
   const selectedActivity = useMemo(
     () => sliceDailySeries(series, analyticsWindow),
     [analyticsWindow, series],
   );
-  const recentActivityPoints = useMemo(() => toActivityPoints(recentActivity), [recentActivity]);
   const selectedActivityPoints = useMemo(
     () => toActivityPoints(selectedActivity),
     [selectedActivity],
@@ -554,116 +558,35 @@ export function BusinessPanel({
         </div>
       ) : null}
       {view === "dashboard" ? (
-        isMinimal ? (
-          <section
-            className="owner-view owner-view--dashboard owner-view--minimal"
-            data-testid="dashboard-layout-minimal"
-          >
-            <PageHeader
-              subtitle="Gestioná tu carta y seguí la actividad del negocio."
-              title={business.name}
-            />
-            <div className="compact-metric-strip">
-              <MetricCard
-                helper="Hoy"
-                label="Visualizaciones"
-                value={summary?.scans_today ?? 0}
-              />
-              <MetricCard helper="7 días" label="Actividad" value={summary?.scans_7d ?? 0} />
-              <MetricCard
-                helper="Hora pico"
-                label="Mejor horario"
-                value={formatPeakHour(summary?.busiest_hour ?? null)}
-              />
-            </div>
-            <Card className="panel-stack owner-compact-card">
-              <div className="owner-compact-card__topline">
-                <Badge tone={statusTone(business.status)}>
-                  {businessStatusLabel(business.status)}
-                </Badge>
-                <span className="muted">
-                  Carta {menu?.current ? "publicada" : "pendiente"} · {lastUpdate}
-                </span>
-              </div>
-              <div className="compact-action-row">
-                <Button onClick={() => setView("menu")} size="sm">
-                  <FileUp size={16} /> Actualizar carta
-                </Button>
-                <Button onClick={() => setView("qr")} size="sm" variant="secondary">
-                  <QrCode size={16} /> Mi QR
-                </Button>
-                <Button onClick={() => setView("analytics")} size="sm" variant="ghost">
-                  <BarChart3 size={16} /> Estadísticas
-                </Button>
-              </div>
-            </Card>
-          </section>
-        ) : (
-          <section
-            className="owner-view owner-view--dashboard owner-view--maximal"
-            data-testid="dashboard-layout-maximal"
-          >
-            <PageHeader
-              subtitle="Gestioná tu carta y seguí la actividad del negocio."
-              title={business.name}
-            />
-            <div className="metric-grid">
-              <MetricCard
-                helper={new Date().toLocaleDateString("es-AR")}
-                label="Visualizaciones hoy"
-                value={summary?.scans_today ?? 0}
-              />
-              <MetricCard
-                helper="Actividad real reciente"
-                label="Últimos 7 días"
-                value={summary?.scans_7d ?? 0}
-              />
-              <MetricCard
-                helper="Ventana completa disponible"
-                label="Últimos 30 días"
-                value={summary?.scans_30d ?? 0}
-              />
-              <MetricCard
-                helper="Últimos 30 días"
-                label="Hora pico"
-                value={formatPeakHour(summary?.busiest_hour ?? null)}
-              />
-            </div>
-            <div className="content-grid">
-              <Card className="panel-stack">
-                <h2>Resumen rápido</h2>
-                <p className="muted">
-                  Estado: {businessStatusLabel(business.status)} · Carta:{" "}
-                  {menu?.current ? "Publicada" : "Pendiente"} · Última actualización: {lastUpdate}
-                </p>
-                <ActivityChart
-                  contained={false}
-                  description="Actividad reciente de los últimos 7 días."
-                  emptyDescription="Todavía no hay actividad de escaneos para mostrar."
-                  emptyTitle="Sin actividad reciente"
-                  points={recentActivityPoints}
-                  title="Actividad reciente"
-                  variant="compact"
-                />
-              </Card>
-              <Card className="panel-stack">
-                <h2>Acciones rápidas</h2>
-                <p className="muted visual-detail">
-                  Los accesos directos siguen usando la operación real del negocio.
-                </p>
-                <Button onClick={() => setView("menu")}>
-                  <FileUp size={18} /> Actualizar carta
-                </Button>
-                <Button onClick={() => setView("qr")} variant="secondary">
-                  <QrCode size={18} /> Ver mi QR
-                </Button>
-                <Button onClick={() => setView("analytics")} variant="secondary">
-                  <BarChart3 size={18} /> Ver estadísticas
-                </Button>
-              </Card>
-            </div>
-          </section>
-        )
+        <section
+          className={`owner-view owner-view--dashboard ${
+            isMinimal ? "owner-view--minimal" : "owner-view--maximal"
+          }`}
+          data-testid={isMinimal ? "dashboard-layout-minimal" : "dashboard-layout-maximal"}
+        >
+          <DashboardHeader
+            businessName={business.name}
+            businessStatus={businessStatusLabel(business.status)}
+            destinationLabel={dashboardDestinationLabel(destinationTypeDraft)}
+            menuStatus={menu?.current ? "Publicada" : "Pendiente"}
+            plan={business.plan_key}
+            publicCode={menu?.public_code ?? null}
+            statusTone={statusTone(business.status)}
+            updatedLabel={lastUpdate}
+          />
+          <DashboardActions
+            onOpenAnalytics={() => setView("analytics")}
+            onOpenBusiness={() => setView("business")}
+            onOpenMenu={() => setView("menu")}
+            onOpenQr={() => setView("qr")}
+          />
+          <DashboardMetricsGrid
+            busiestHour={formatPeakHour(summary?.busiest_hour ?? null)}
+            scans7d={summary?.scans_7d ?? 0}
+            scans30d={summary?.scans_30d ?? 0}
+            scansToday={summary?.scans_today ?? 0}
+          />
+        </section>
       ) : null}
 
       {view === "menu" ? (

@@ -636,7 +636,8 @@ describe("BusinessPanel logo flow", () => {
 
     await screen.findByRole("heading", {name: "Bar Central"});
     await waitFor(() => {
-      expect(screen.getByText(/Última actualización: 20\/8\/2026/)).toBeTruthy();
+      expect(screen.getByText("Actualización")).toBeTruthy();
+      expect(screen.getByText("20/8/2026")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", {name: "Mi carta"}));
@@ -810,12 +811,14 @@ describe("BusinessPanel logo flow", () => {
 
     const minimal = renderPanel(<BusinessPanel token="owner-token" user={null} />, "minimal");
     await screen.findByTestId("dashboard-layout-minimal");
-    expect(screen.queryByText("Actividad en 7 días")).toBeNull();
+    expect(screen.getByRole("heading", {name: "Acciones rápidas"})).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Métricas operativas"})).toBeTruthy();
     minimal.unmount();
 
     renderPanel(<BusinessPanel token="owner-token" user={null} />, "maximal");
     await screen.findByTestId("dashboard-layout-maximal");
-    expect(screen.getByText("Actividad reciente")).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Acciones rápidas"})).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Métricas operativas"})).toBeTruthy();
   });
 
   it("lets the owner switch between hosted and external menu destinations", async () => {

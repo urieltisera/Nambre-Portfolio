@@ -199,7 +199,8 @@ describe("Owner shell", () => {
     );
 
     await screen.findByRole("heading", {name: "Demo Biz"});
-    expect(screen.getByText("Gestioná tu carta y seguí la actividad del negocio.")).toBeTruthy();
+    expect(screen.getByText("Inicio operativo")).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Acciones rápidas"})).toBeTruthy();
     expect(screen.queryByText(/Hola,/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
@@ -405,7 +406,7 @@ describe("Owner shell", () => {
     await screen.findByRole("heading", {name: "Minimal Biz"});
     expect(screen.getByTestId("dashboard-layout-minimal")).toBeTruthy();
     expect(screen.queryByTestId("dashboard-layout-maximal")).toBeNull();
-    expect(screen.queryByText("Resumen rápido")).toBeNull();
+    expect(screen.getByRole("heading", {name: "Métricas operativas"})).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", {name: "Configuración"}));
     await screen.findByRole("heading", {name: "Configuración"});
@@ -415,7 +416,7 @@ describe("Owner shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("dashboard-layout-maximal")).toBeTruthy();
     });
-    expect(screen.getByText("Resumen rápido")).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Métricas operativas"})).toBeTruthy();
     expect(localStorage.getItem(appearancePreferences.keyForUser(user.id))).toContain(
       "\"visualStyle\":\"maximal\"",
     );

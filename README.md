@@ -21,7 +21,7 @@ Frontend: `http://localhost:3000`
 
 ## Password Reset Email
 
-La recuperación de contraseña usa SMTP genérico configurable por variables de entorno. Para un deploy real en Contabo faltará definir:
+La recuperación de contraseña usa SMTP genérico configurable por variables de entorno. Para un deploy real faltará definir:
 
 - `FRONTEND_BASE_URL`
 - `SITE_URL` o, si se reutiliza la estrategia actual, asegurar que el frontend reciba `FRONTEND_BASE_URL` también durante `docker build`
@@ -37,6 +37,41 @@ La recuperación de contraseña usa SMTP genérico configurable por variables de
 Sin esas credenciales, el backend mantiene la respuesta pública genérica y no expone enumeración de usuarios, pero no podrá entregar el email real.
 
 Para el frontend productivo, `getSiteUrl()` resuelve `SITE_URL -> FRONTEND_BASE_URL -> NEXT_PUBLIC_SITE_URL`. En producción debe existir una URL pública válida, por ejemplo `FRONTEND_BASE_URL=https://nambre.com.ar`, y el mecanismo de build/deploy del contenedor debe inyectarla tanto al build como al runtime.
+
+## Producción con Neon
+
+Nambre producción usa PostgreSQL administrado por Neon. La ruta productiva canónica consume `DATABASE_URL` desde `.env.production` o secretos del host; no deriva la conexión desde `POSTGRES_USER`, `POSTGRES_PASSWORD` ni `POSTGRES_DB`.
+
+Preparar el archivo local de secretos fuera de Git:
+
+```bash
+cp .env.production.example .env.production
+```
+
+Editar `.env.production` con valores reales antes de operar. `.env.production` está ignorado por Git. `compose.production.yaml` usa ese archivo por defecto; para validaciones con valores dummy se puede apuntar `PRODUCTION_ENV_FILE` a otro archivo.
+
+Topología productiva:
+
+- `frontend`: Next.js público en `127.0.0.1:3000`, con `FRONTEND_BASE_URL=https://nambre.com.ar`.
+- `backend`: FastAPI interno/publicable en `127.0.0.1:8000`, con `DATABASE_URL` apuntando a Neon y `PUBLIC_BASE_URL=https://nambre.com.ar`.
+- `migrate`: operación one-shot para Alembic, usa el mismo `DATABASE_URL` productivo que `backend`.
+- `backend_storage`: volumen Docker persistente montado en `STORAGE_PATH`, por defecto `/data/storage`.
+
+El proxy interno del frontend al backend usa `API_PROXY_TARGET=http://backend:8000`; esa URL es solo de red Docker, no una URL de navegador.
+
+Ejecutar migraciones de forma explícita antes de desplegar o reiniciar la aplicación:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml --profile migration run --rm migrate
+```
+
+Arrancar o reiniciar la aplicación no ejecuta migraciones:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml up -d --build backend frontend
+```
+
+Si SMTP no está configurado, la aplicación puede iniciar, pero no entregará emails reales de recuperación de contraseña ni invitaciones.
 
 Credenciales de seed:
 
@@ -89,7 +124,6 @@ ruff check .
 ruff format --check .
 mypy .
 pytest
-alembic upgrade head
 ```
 
 Frontend:

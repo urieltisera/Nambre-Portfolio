@@ -14,17 +14,19 @@ Tener una copia consistente, fechada y recuperable sin introducir infraestructur
 Usar `scripts/backup_production.sh` en el host o contenedor operativo que tenga acceso a:
 
 - `pg_dump`
-- la base configurada en `DATABASE_URL` o variables `PG*`
+- la base Neon configurada en `DATABASE_URL` o variables `PG*`
 - el path real de storage configurado en `STORAGE_PATH`
 
 Ejemplo:
 
 ```bash
 BACKUP_ROOT=/var/backups/nambre \
-DATABASE_URL="postgresql+psycopg://user:secret@db:5432/nambre" \
+DATABASE_URL="postgresql+psycopg://user:secret@host/neondb?sslmode=require" \
 STORAGE_PATH=/data/storage \
 bash scripts/backup_production.sh
 ```
+
+El script normaliza `postgresql+psycopg://` a `postgresql://` antes de invocar `pg_dump`, por lo que es compatible con URLs de Neon que incluyan `sslmode=require`.
 
 ## Qué genera
 

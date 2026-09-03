@@ -58,6 +58,11 @@ const faqs = [
   },
 ];
 
+const showcaseProducts = [
+  {name: "Tostado de campo", detail: "Masa madre, queso y tomate", price: "$ 7.900"},
+  {name: "Limonada fresca", detail: "Menta, jengibre y hielo", price: "$ 3.400"},
+];
+
 export function MarketingPage() {
   return (
     <main className="marketing-shell">
@@ -190,21 +195,53 @@ function ProductShowcase() {
   return (
     <section className="marketing-section" id="producto">
       <Container className="marketing-showcase">
-        <div className="marketing-product-panel">
+        <div className="marketing-product-panel" aria-label="Vista conceptual del panel y la carta digital">
           <div className="marketing-product-panel__bar">
             <span />
             <span />
             <span />
           </div>
           <div className="marketing-product-panel__content">
-            <div>
-              <Eyebrow>Panel del negocio</Eyebrow>
-              <Heading as="h3">Controlá lo que el cliente ve sin cambiar de herramienta.</Heading>
+            <div className="marketing-product-panel__header">
+              <div>
+                <Eyebrow>Panel del negocio</Eyebrow>
+                <Heading as="h3">Controlá lo que el cliente ve sin cambiar de herramienta.</Heading>
+              </div>
+              <span className="marketing-product-panel__status">Publicado</span>
             </div>
-            <div className="marketing-product-list">
-              <span>Categorías ordenadas</span>
-              <span>Productos con precio e imagen</span>
-              <span>QR listo para compartir</span>
+            <div className="marketing-product-flow">
+              <div className="marketing-product-admin" aria-label="Administración de carta">
+                <span className="marketing-product-admin__label">Administración</span>
+                <div className="marketing-product-list">
+                  <span>Categorías ordenadas</span>
+                  <span>Productos con precio e imagen</span>
+                  <span>QR listo para compartir</span>
+                </div>
+              </div>
+              <div className="marketing-product-connector" aria-hidden="true">
+                <span>N</span>
+              </div>
+              <div className="marketing-product-preview" aria-label="Menú que ve el cliente">
+                <div className="marketing-product-preview__top">
+                  <span>Carta Nambre</span>
+                  <strong>QR activo</strong>
+                </div>
+                <div>
+                  <p>Café del Centro</p>
+                  <span>Especiales de hoy</span>
+                </div>
+                <div className="marketing-product-preview__items">
+                  {showcaseProducts.map((product) => (
+                    <article key={product.name}>
+                      <div>
+                        <strong>{product.name}</strong>
+                        <span>{product.detail}</span>
+                      </div>
+                      <b>{product.price}</b>
+                    </article>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="marketing-product-panel__actions">
               <Button disabled size="sm" variant="primary">

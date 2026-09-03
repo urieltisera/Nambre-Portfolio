@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {readFileSync} from "node:fs";
 import path from "node:path";
@@ -94,6 +94,20 @@ describe("Page", () => {
     expect(screen.getByRole("link", {name: "Teléfono"}).getAttribute("href")).toBe("#contacto");
     expect(screen.getByRole("link", {name: "Privacidad"}).getAttribute("href")).toBe("/privacy");
     expect(screen.getByRole("link", {name: "Términos"}).getAttribute("href")).toBe("/terms");
+  });
+
+  it("shows a synthetic product showcase that connects admin, QR and customer menu", () => {
+    render(<Page />);
+
+    const showcase = screen.getByLabelText("Vista conceptual del panel y la carta digital");
+
+    expect(showcase).toBeTruthy();
+    expect(within(showcase).getByLabelText("Administración de carta")).toBeTruthy();
+    expect(within(showcase).getByLabelText("Menú que ve el cliente")).toBeTruthy();
+    expect(within(showcase).getByText("Publicado")).toBeTruthy();
+    expect(within(showcase).getByText("Café del Centro")).toBeTruthy();
+    expect(within(showcase).getByText("Tostado de campo")).toBeTruthy();
+    expect(within(showcase).getByText("$ 7.900")).toBeTruthy();
   });
 
   it("keeps the WebGL dependency behind the dedicated hero client island", () => {

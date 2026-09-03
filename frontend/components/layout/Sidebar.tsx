@@ -66,6 +66,7 @@ export function Sidebar({
       <nav className="sidebar__nav" aria-label="Navegación principal">
         {items.map((item) => (
           <button
+            aria-current={activeKey === item.key ? "page" : undefined}
             aria-label={collapsed ? item.label : undefined}
             className={cn("sidebar__link", activeKey === item.key ? "is-active" : "")}
             data-tooltip={collapsed ? item.label : undefined}

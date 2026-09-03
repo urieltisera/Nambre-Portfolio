@@ -43,6 +43,7 @@ export function MobileDrawer({
           <NambreBrand />
           <Button
             aria-label="Cerrar menú"
+            className="mobile-drawer__close"
             onClick={onClose}
             ref={closeButtonRef}
             variant="ghost"

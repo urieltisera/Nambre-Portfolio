@@ -810,9 +810,24 @@ select:focus-visible,
 }
 
 .owner-shell {
+  --owner-shell-canvas: var(--nl-color-shell-canvas);
+  --owner-shell-surface: var(--nl-color-shell-surface);
+  --owner-shell-surface-strong: var(--nl-color-shell-surface-strong);
+  --owner-shell-border: var(--nl-color-shell-border);
+  --owner-shell-divider: var(--nl-color-shell-divider);
+  --owner-shell-hover: var(--nl-color-shell-hover);
+  --owner-shell-active: var(--nl-color-shell-active);
+  --owner-shell-active-strong: var(--nl-color-shell-active-strong);
+  --owner-shell-overlay: var(--nl-color-shell-overlay);
+  --owner-shell-shadow: var(--nl-shadow-shell);
+  --owner-shell-focus: var(--nl-color-product-focus);
+
   min-height: 100vh;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 6%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--owner-shell-canvas) 94%, var(--surface)) 0%, var(--background) 100%);
   transition: grid-template-columns 180ms ease;
 }
 
@@ -822,6 +837,7 @@ select:focus-visible,
 
 .owner-shell__main {
   min-width: 0;
+  background: transparent;
 }
 
 .owner-shell__mobile-header {
@@ -848,7 +864,7 @@ select:focus-visible,
 
 .owner-shell__mobile-brand p {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--nl-color-text-secondary);
   font-size: 0.9rem;
   white-space: nowrap;
   overflow: hidden;
@@ -862,13 +878,20 @@ select:focus-visible,
   width: var(--sidebar-width);
   overflow: hidden;
   min-width: 0;
-  border-right: 1px solid var(--border);
-  background: var(--sidebar);
+  border-right: 1px solid var(--owner-shell-divider);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--owner-shell-surface) 96%, var(--owner-shell-surface-strong)) 0%, var(--owner-shell-surface-strong) 100%);
   padding: var(--sidebar-padding);
   display: grid;
-  gap: 1rem;
+  gap: 1.1rem;
   grid-template-rows: auto 1fr auto;
-  transition: width 180ms ease, padding 180ms ease, gap 180ms ease;
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--owner-shell-border) 70%, transparent);
+  transition:
+    width 180ms ease,
+    padding 180ms ease,
+    gap 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .sidebar--collapsed {
@@ -883,6 +906,7 @@ select:focus-visible,
   justify-content: space-between;
   gap: 0.75rem;
   min-width: 0;
+  padding-bottom: 0.2rem;
 }
 
 .sidebar__brand {
@@ -901,7 +925,7 @@ select:focus-visible,
 
 .sidebar__nav {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   align-content: start;
   min-width: 0;
 }
@@ -914,21 +938,46 @@ select:focus-visible,
   width: 100%;
   min-height: var(--sidebar-link-height);
   min-width: 0;
-  border: 0;
-  border-radius: 16px;
+  border: 1px solid transparent;
+  border-radius: 18px;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--nl-color-text-primary);
   cursor: pointer;
   padding: 0 0.9rem;
   text-align: left;
   position: relative;
-  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.sidebar__link:hover,
+.mobile-drawer__link:hover {
+  background: var(--owner-shell-hover);
+  border-color: color-mix(in srgb, var(--owner-shell-border) 84%, transparent);
+}
+
+.sidebar__link:focus-visible,
+.mobile-drawer__link:focus-visible,
+.sidebar__collapse:focus-visible,
+.owner-shell__menu-trigger:focus-visible,
+.mobile-drawer__close:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface) 92%, transparent),
+    0 0 0 4px var(--owner-shell-focus);
 }
 
 .sidebar__link.is-active,
 .mobile-drawer__link.is-active {
-  background: var(--sidebar-active);
-  color: var(--primary);
+  background:
+    linear-gradient(180deg, var(--owner-shell-active) 0%, color-mix(in srgb, var(--owner-shell-active-strong) 82%, var(--owner-shell-active)) 100%);
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--owner-shell-border));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 30%, transparent);
+  color: var(--nl-color-product-primary);
 }
 
 .sidebar__icon {
@@ -971,7 +1020,7 @@ select:focus-visible,
   padding: 0;
   min-height: 48px;
   margin: 0 auto;
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
 .sidebar--collapsed .sidebar__nav {
@@ -987,23 +1036,26 @@ select:focus-visible,
 }
 
 .sidebar--collapsed .sidebar__link.is-active {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent),
+    0 10px 22px color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
 .sidebar__bottom,
 .mobile-drawer__footer {
-  padding-top: 0.25rem;
+  padding-top: 0.55rem;
   min-width: 0;
+  border-top: 1px solid var(--owner-shell-border);
 }
 
 .sidebar-summary {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .sidebar-summary p {
   margin: 0.2rem 0 0;
-  color: var(--text-secondary);
+  color: var(--nl-color-text-secondary);
 }
 
 .sidebar-summary--collapsed {
@@ -1042,11 +1094,11 @@ select:focus-visible,
   left: calc(100% + 12px);
   top: 50%;
   transform: translateY(-50%);
-  background: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
+  background: var(--nl-color-surface);
+  color: var(--nl-color-text-primary);
+  border: 1px solid var(--owner-shell-border);
   border-radius: 999px;
-  box-shadow: var(--tooltip-shadow);
+  box-shadow: var(--nl-shadow-tooltip);
   padding: 0.35rem 0.6rem;
   font-size: 0.8rem;
   white-space: nowrap;
@@ -1075,18 +1127,20 @@ select:focus-visible,
   position: absolute;
   inset: 0;
   border: 0;
-  background: var(--overlay);
+  background: var(--owner-shell-overlay);
 }
 
 .mobile-drawer__panel {
   position: absolute;
   inset: 0 auto 0 0;
   width: min(92vw, 340px);
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--owner-shell-surface-strong) 76%, var(--nl-color-surface)) 0%, var(--nl-color-surface) 100%);
+  border-right: 1px solid var(--owner-shell-divider);
   display: grid;
   grid-template-rows: auto 1fr;
   padding: 1rem;
+  box-shadow: var(--owner-shell-shadow);
 }
 
 .mobile-drawer__header {
@@ -1094,6 +1148,8 @@ select:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--owner-shell-border);
 }
 
 .mobile-drawer__body {
@@ -1101,11 +1157,12 @@ select:focus-visible,
   grid-template-rows: 1fr auto;
   gap: 1rem;
   min-height: 0;
+  padding-top: 1rem;
 }
 
 .mobile-drawer__nav {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.4rem;
   align-content: start;
 }
 
@@ -1115,6 +1172,7 @@ select:focus-visible,
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+  padding: 0.15rem 0 0.4rem;
 }
 
 .business-switcher {
@@ -1873,12 +1931,13 @@ select:focus-visible,
     align-items: center;
     gap: 0.85rem;
     padding: 1rem var(--space-page);
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border-bottom: 1px solid var(--owner-shell-border);
+    background: color-mix(in srgb, var(--owner-shell-surface-strong) 86%, transparent);
     backdrop-filter: blur(12px);
     position: sticky;
     top: 0;
     z-index: 10;
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--primary) 5%, transparent);
   }
 
   .owner-shell__menu-trigger {

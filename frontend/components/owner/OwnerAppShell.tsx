@@ -75,6 +75,7 @@ export function OwnerAppShell({
           <nav className="mobile-drawer__nav" aria-label="Navegación móvil">
             {items.map((item) => (
               <button
+                aria-current={activeView === item.key ? "page" : undefined}
                 className={cn(
                   "mobile-drawer__link",
                   activeView === item.key ? "is-active" : "",

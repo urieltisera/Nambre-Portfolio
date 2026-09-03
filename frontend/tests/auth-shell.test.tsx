@@ -205,6 +205,9 @@ describe("Owner shell", () => {
     fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
     const drawer = screen.getByRole("dialog", {name: "Nambre"});
     expect(drawer).toBeTruthy();
+    expect(within(drawer).getByRole("button", {name: "Inicio"}).getAttribute("aria-current")).toBe(
+      "page",
+    );
 
     fireEvent.click(within(drawer).getByRole("button", {name: "Configuración"}));
 
@@ -276,6 +279,7 @@ describe("Owner shell", () => {
 
     const homeButton = screen.getByRole("button", {name: "Inicio"});
     expect(homeButton.className).toContain("is-active");
+    expect(homeButton.getAttribute("aria-current")).toBe("page");
     fireEvent.click(screen.getByRole("button", {name: "Contraer sidebar"}));
 
     expect(within(sidebar).queryByText("Mi carta")).toBeNull();
@@ -297,6 +301,70 @@ describe("Owner shell", () => {
     expect(within(sidebar).getByText("Bar Central")).toBeTruthy();
     expect(within(sidebar).getByRole("button", {name: "Contraer sidebar"})).toBeTruthy();
   });
+
+  it("closes the mobile drawer with the close button, overlay and Escape while keeping focus behavior", async () => {
+    stubMatchMedia(false);
+    const user: User = {
+      email: "owner@example.com",
+      id: "owner-1",
+      is_platform_admin: false,
+    };
+    const business: Business = {
+      id: "biz-4",
+      logo_url: null,
+      name: "Drawer Demo",
+      slug: "drawer-demo",
+      status: "active",
+      updated_at: "2026-08-21T12:00:00Z",
+    };
+
+    mocks.listBusinesses.mockResolvedValue([business]);
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path === "/api/businesses/biz-4") return business;
+      if (path === "/api/businesses/biz-4/menu") {
+        return {current: null, public_code: null, versions: []};
+      }
+      if (path === "/api/businesses/biz-4/analytics/summary") {
+        return {busiest_hour: 19, scans_30d: 12, scans_7d: 5, scans_today: 1};
+      }
+      if (path === "/api/businesses/biz-4/analytics/scans?period=30d") return [];
+      if (path === "/api/businesses/biz-4/qr") return [];
+      throw new Error(`Unhandled request: ${path}`);
+    });
+
+    render(
+      <AppearanceProvider userId={user.id}>
+        <BusinessPanel onLogout={vi.fn()} token="owner-token" user={user} />
+      </AppearanceProvider>,
+    );
+
+    await screen.findByRole("heading", {name: "Drawer Demo"});
+
+    fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
+    let drawer = screen.getByRole("dialog", {name: "Nambre"});
+    let closeButton = within(drawer).getByRole("button", {name: "Cerrar menú"});
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.click(closeButton);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", {name: "Nambre"})).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
+    drawer = screen.getByRole("dialog", {name: "Nambre"});
+    fireEvent.click(document.querySelector(".mobile-drawer__overlay") as Element);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", {name: "Nambre"})).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Abrir navegación"}));
+    drawer = screen.getByRole("dialog", {name: "Nambre"});
+    closeButton = within(drawer).getByRole("button", {name: "Cerrar menú"});
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(window, {key: "Escape"});
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", {name: "Nambre"})).toBeNull();
+    });
+  }, 15000);
 
   it("switches between minimal and maximal layouts and persists the visible change", async () => {
     stubMatchMedia(false);

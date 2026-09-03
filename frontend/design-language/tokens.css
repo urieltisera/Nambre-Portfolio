@@ -23,6 +23,15 @@
   --nl-color-product-primary-hover: var(--primary-hover);
   --nl-color-product-primary-soft: var(--primary-soft);
   --nl-color-product-focus: var(--focus);
+  --nl-color-shell-surface: var(--sidebar);
+  --nl-color-shell-surface-strong: color-mix(in srgb, var(--sidebar) 86%, var(--surface));
+  --nl-color-shell-canvas: color-mix(in srgb, var(--background) 80%, var(--surface));
+  --nl-color-shell-border: color-mix(in srgb, var(--border) 88%, transparent);
+  --nl-color-shell-divider: color-mix(in srgb, var(--border) 72%, transparent);
+  --nl-color-shell-hover: color-mix(in srgb, var(--primary-soft) 58%, var(--surface));
+  --nl-color-shell-active: var(--sidebar-active);
+  --nl-color-shell-active-strong: color-mix(in srgb, var(--primary) 18%, var(--surface));
+  --nl-color-shell-overlay: var(--overlay);
 
   /* Base semantic aliases. Legacy tokens remain the source of truth. */
   --nl-color-background: var(--background);
@@ -87,6 +96,7 @@
   --nl-shadow-sm: var(--shadow-sm);
   --nl-shadow-md: var(--shadow-md);
   --nl-shadow-tooltip: var(--tooltip-shadow);
+  --nl-shadow-shell: 0 24px 48px color-mix(in srgb, var(--primary) 6%, rgba(15, 23, 42, 0.12));
 
   /* Motion primitives for future opt-in use. */
   --nl-motion-duration-fast: 120ms;

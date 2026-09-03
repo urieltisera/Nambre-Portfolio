@@ -32,7 +32,6 @@ import {
   assetUrl,
   businessDestinationErrorMessage,
   businessHasFeature,
-  businessDestinationLabel,
   canOperateBusiness,
   businessStatusLabel,
   BusinessDestination,
@@ -854,31 +853,10 @@ export function BusinessPanel({
       {view === "business" ? (
         <section className="owner-view">
           <PageHeader
-            subtitle="Configuración → Negocio → Identidad. Separada de la modalidad de carta."
+            subtitle="Administrá la información e identidad de tu negocio."
             title="Negocio"
           />
           <div className="content-grid">
-            <Card className="panel-stack">
-              <h2>Resumen del negocio</h2>
-              <div className="detail-list">
-                <div>
-                  <dt>Nombre</dt>
-                  <dd>{business.name}</dd>
-                </div>
-                <div>
-                  <dt>Slug</dt>
-                  <dd>{business.slug}</dd>
-                </div>
-                <div>
-                  <dt>Estado</dt>
-                  <dd>{businessStatusLabel(business.status)}</dd>
-                </div>
-                <div>
-                  <dt>Destino actual</dt>
-                  <dd>{businessDestinationLabel(business.destination_type ?? "menu_pdf")}</dd>
-                </div>
-              </div>
-            </Card>
             <Card className="panel-stack">
               <h2>Identidad</h2>
               <label className="field">

@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "0011_business_identity_logos"
-down_revision = "0010_digital_menu_draft_publish_snapshots"
+down_revision = "0010_digital_menu_snapshots"
 branch_labels = None
 depends_on = None
 

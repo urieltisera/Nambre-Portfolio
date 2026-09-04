@@ -14,19 +14,23 @@ Tener una copia consistente, fechada y recuperable sin introducir infraestructur
 Usar `scripts/backup_production.sh` en el host o contenedor operativo que tenga acceso a:
 
 - `pg_dump`
-- la base Neon configurada en `DATABASE_URL` o variables `PG*`
+- la base PostgreSQL 16 en Docker del VPS Contabo mediante `DATABASE_URL`, variables `PG*` o `POSTGRES_*`
 - el path real de storage configurado en `STORAGE_PATH`
 
 Ejemplo:
 
 ```bash
 BACKUP_ROOT=/var/backups/nambre \
-DATABASE_URL="postgresql+psycopg://user:secret@host/neondb?sslmode=require" \
+POSTGRES_HOST=127.0.0.1 \
+POSTGRES_PORT=5432 \
+POSTGRES_DB=nambre \
+POSTGRES_USER=nambre \
+POSTGRES_PASSWORD=replace-me \
 STORAGE_PATH=/data/storage \
 bash scripts/backup_production.sh
 ```
 
-El script normaliza `postgresql+psycopg://` a `postgresql://` antes de invocar `pg_dump`, por lo que es compatible con URLs de Neon que incluyan `sslmode=require`.
+También se puede usar `DATABASE_URL` si el operador ya la exportó en la shell. El script normaliza `postgresql+psycopg://` a `postgresql://` antes de invocar `pg_dump`.
 
 ## Qué genera
 
@@ -35,6 +39,13 @@ El script normaliza `postgresql+psycopg://` a `postgresql://` antes de invocar `
 - `backup.env.example`: variables de referencia sin secretos.
 
 Cada corrida crea una carpeta con timestamp UTC, por ejemplo `20260824T031500Z`.
+
+Antes de ejecutar la migración productiva `0010_digital_menu_snapshots -> 0011_business_identity_logos`, crear un backup fresco y verificar al menos:
+
+```bash
+gzip -t /ruta/al/backup/postgres.sql.gz
+tar -tzf /ruta/al/backup/storage.tar.gz >/dev/null
+```
 
 ## Retención
 

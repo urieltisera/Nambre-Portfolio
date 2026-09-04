@@ -28,8 +28,10 @@ database_url="${DATABASE_URL:-}"
 if [[ -z "$database_url" ]]; then
   if [[ -n "${PGHOST:-}" && -n "${PGDATABASE:-}" && -n "${PGUSER:-}" ]]; then
     database_url="postgresql://${PGUSER}@${PGHOST}:${PGPORT:-5432}/${PGDATABASE}"
+  elif [[ -n "${POSTGRES_HOST:-}" && -n "${POSTGRES_DB:-}" && -n "${POSTGRES_USER:-}" && -n "${POSTGRES_PASSWORD:-}" ]]; then
+    database_url="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}"
   else
-    fail "Definí DATABASE_URL o PGHOST/PGDATABASE/PGUSER antes de correr el backup"
+    fail "Definí DATABASE_URL, PGHOST/PGDATABASE/PGUSER o POSTGRES_HOST/POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD antes de correr el backup"
   fi
 fi
 database_url="${database_url/+psycopg/}"
@@ -49,6 +51,11 @@ BACKUP_CREATED_AT_UTC=${timestamp}
 BACKUP_ROOT=${backup_root}
 STORAGE_PATH=${storage_path}
 DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_DB=<postgres-database>
+POSTGRES_USER=<postgres-user>
+POSTGRES_PASSWORD=<postgres-password>
 EOF
 
 if [[ -n "${BACKUP_RETENTION_DAYS:-}" ]]; then
@@ -61,3 +68,4 @@ if [[ -n "${BACKUP_RETENTION_DAYS:-}" ]]; then
 fi
 
 printf 'Backup completado en %s\n' "$target_dir"
+printf 'Verificación recomendada: gzip -t %s && tar -tzf %s >/dev/null\n' "$postgres_dump" "$storage_dump"

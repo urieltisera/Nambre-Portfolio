@@ -38,9 +38,15 @@ Sin esas credenciales, el backend mantiene la respuesta pública genérica y no 
 
 Para el frontend productivo, `getSiteUrl()` resuelve `SITE_URL -> FRONTEND_BASE_URL -> NEXT_PUBLIC_SITE_URL`. En producción debe existir una URL pública válida, por ejemplo `FRONTEND_BASE_URL=https://nambre.com.ar`, y el mecanismo de build/deploy del contenedor debe inyectarla tanto al build como al runtime.
 
-## Producción con Neon
+## Producción en Contabo con PostgreSQL Docker
 
-Nambre producción usa PostgreSQL administrado por Neon. La ruta productiva canónica consume `DATABASE_URL` desde `.env.production` o secretos del host; no deriva la conexión desde `POSTGRES_USER`, `POSTGRES_PASSWORD` ni `POSTGRES_DB`.
+Nambre producción real corre en el VPS Contabo con tres servicios Docker persistentes:
+
+- `postgres`: PostgreSQL 16 Alpine con volumen `postgres_data`.
+- `backend`: FastAPI en `127.0.0.1:8000`, con `DATABASE_URL` construida internamente como `postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}` y `PUBLIC_BASE_URL=https://nambre.com.ar`.
+- `frontend`: Next.js en `127.0.0.1:3000`.
+
+La ruta productiva canónica vuelve a derivar la conexión interna desde `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`. No se usa Neon en la configuración productiva canónica de esta release.
 
 Preparar el archivo local de secretos fuera de Git:
 
@@ -52,12 +58,19 @@ Editar `.env.production` con valores reales antes de operar. `.env.production` e
 
 Topología productiva:
 
+- `postgres`: PostgreSQL 16 Alpine persistente en red Docker, con volumen `postgres_data`.
 - `frontend`: Next.js público en `127.0.0.1:3000`, con `FRONTEND_BASE_URL=https://nambre.com.ar`.
-- `backend`: FastAPI interno/publicable en `127.0.0.1:8000`, con `DATABASE_URL` apuntando a Neon y `PUBLIC_BASE_URL=https://nambre.com.ar`.
-- `migrate`: operación one-shot para Alembic, usa el mismo `DATABASE_URL` productivo que `backend`.
+- `backend`: FastAPI interno/publicable en `127.0.0.1:8000`, sin ejecutar migraciones al iniciar.
+- `migrate`: operación one-shot para Alembic, usa el mismo `DATABASE_URL` interno que `backend` y sólo corre cuando se invoca explícitamente.
 - `backend_storage`: volumen Docker persistente montado en `STORAGE_PATH`, por defecto `/data/storage`.
 
 El proxy interno del frontend al backend usa `API_PROXY_TARGET=http://backend:8000`; esa URL es solo de red Docker, no una URL de navegador.
+
+Requisito permanente de Caddy en producción, sin cambios en este repositorio durante esta tarea:
+
+- `/m/*/menu.pdf` debe rutear a `127.0.0.1:8000`.
+- El tráfico normal del sitio debe rutear a `127.0.0.1:3000`.
+- `www.nambre.com.ar` debe redirigir a `https://nambre.com.ar`.
 
 Ejecutar migraciones de forma explícita antes de desplegar o reiniciar la aplicación:
 
@@ -68,7 +81,7 @@ docker compose --env-file .env.production -f compose.production.yaml --profile m
 Arrancar o reiniciar la aplicación no ejecuta migraciones:
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml up -d --build backend frontend
+docker compose --env-file .env.production -f compose.production.yaml up -d --build postgres backend frontend
 ```
 
 Si SMTP no está configurado, la aplicación puede iniciar, pero no entregará emails reales de recuperación de contraseña ni invitaciones.
@@ -161,7 +174,7 @@ MinIO figura en Compose, pero hoy no está integrado en el backend. Se mantiene 
 
 ## Backups operativos
 
-La guía de backups quedó en `docs/backups.md`, con restauración segura en `docs/restore-production.md` y script base en `scripts/backup_production.sh`.
+La guía de backups quedó en `docs/backups.md`, con restauración segura en `docs/restore-production.md` y script base en `scripts/backup_production.sh`. La base productiva sigue siendo el PostgreSQL Docker de Contabo, por lo que antes de la migración `0010_digital_menu_snapshots -> 0011_business_identity_logos` hay que generar un backup fresco y verificar `gzip -t postgres.sql.gz` y `tar -tzf storage.tar.gz`.
 
 ## Alcance excluido
 
